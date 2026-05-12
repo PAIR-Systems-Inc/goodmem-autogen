@@ -1,0 +1,50 @@
+[project]
+name = "autogen-goodmem"
+version = "0.1.0"
+description = "GoodMem memory and tools for the AutoGen agent framework."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "PAIR Systems"}]
+keywords = ["autogen", "goodmem", "memory", "rag", "agents", "llm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "autogen-core>=0.7.5",
+    "httpx>=0.24.0,<1",
+    "pydantic>=2.0,<3",
+    "typing-extensions>=4.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-asyncio>=0.23",
+    "pytest-timeout",
+    "build",
+    "twine",
+]
+
+[project.urls]
+Homepage = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
+Repository = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
+Issues = "https://github.com/PAIR-Systems-Inc/autogen-goodmem/issues"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["integration: live-server tests"]
+
+[build-system]
+requires = ["flit-core>=3.11,<4.0"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "autogen_goodmem"
