@@ -32,22 +32,22 @@ jobs:
           # dependency declaration instead, or setup-uv errors on an empty glob.
           cache-dependency-glob: "pyproject.toml"
 
-      - name: Set up Python
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install
-        run: uv pip install --system --python ${{ matrix.python-version }} -e ".[dev]"
+      - name: Install into a virtualenv
+        # Not --system: the runner's system interpreter is externally managed.
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install -e ".[dev]"
 
       - name: ruff
-        run: ruff check autogen_goodmem tests
+        run: uv run ruff check autogen_goodmem tests
 
       - name: mypy
-        run: mypy autogen_goodmem
+        run: uv run mypy autogen_goodmem
 
       # The live tests need a server and are skipped without credentials;
       # this job runs the offline suite only.
       - name: pytest
-        run: pytest -m "not integration"
+        run: uv run pytest -m "not integration"
 
       - name: Build wheel and sdist
         run: uv build
