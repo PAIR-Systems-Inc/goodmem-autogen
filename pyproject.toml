@@ -65,7 +65,7 @@ exclude = ["tests/"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["integration: live-server tests"]
+markers = ["integration: live-server tests (need GOODMEM_BASE_URL and GOODMEM_API_KEY)"]
 
 [build-system]
 requires = ["flit-core>=3.11,<4.0"]
