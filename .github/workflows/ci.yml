@@ -28,6 +28,9 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # This project has no uv.lock (flit backend); key the cache on the
+          # dependency declaration instead, or setup-uv errors on an empty glob.
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
