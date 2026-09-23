@@ -9,16 +9,15 @@ from goodmem.models.good_mem_status import GoodMemStatus
 from goodmem.models.retrieve_memory_event import RetrieveMemoryEvent
 
 
-class GoodMemRetrievalError(RuntimeError):
-    """A retrieval that produced nothing usable must not look like an empty one."""
-
-    def __init__(self, message: str, *, statuses: list[dict[str, Any]] | None = None) -> None:
-        super().__init__(message)
-        self.statuses = statuses or []
-
-
 # Notices that carry no loss of results.
-_INFORMATIONAL_CODES = frozenset({"LLM_CAPABILITY_INFERRED"})
+#
+# FEATURE_DISABLED is informational unconditionally. The server defines it as
+# "feature disabled due to missing configuration" (common.proto, under
+# "Informational status messages (non-error)"): the caller did not configure
+# an optional feature, so nothing the caller asked for is missing. A feature
+# that was requested and could not be delivered arrives as a different code
+# (NOT_FOUND, RERANKING_FAILED, ...). Retrieval status contract, Q1.
+_INFORMATIONAL_CODES = frozenset({"LLM_CAPABILITY_INFERRED", "FEATURE_DISABLED"})
 
 
 def is_informational(status: GoodMemStatus) -> bool:
@@ -28,18 +27,7 @@ def is_informational(status: GoodMemStatus) -> bool:
     codes it does not know as ``None``, and a status from a newer server must
     be surfaced rather than assumed harmless.
     """
-    code = status.code
-    if code is None:
-        return False
-    if code in _INFORMATIONAL_CODES:
-        return True
-    if code == "FEATURE_DISABLED":
-        details = status.details or {}
-        return (
-            details.get("feature") == "summarization"
-            and details.get("required_param") == "llm_id"
-        )
-    return False
+    return status.code is not None and status.code in _INFORMATIONAL_CODES
 
 
 def classify(events: Sequence[RetrieveMemoryEvent]) -> tuple[list[dict[str, Any]], bool]:

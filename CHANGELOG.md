@@ -32,8 +32,13 @@ PyPI, so there is no released artifact to migrate from.
 - **A failed search no longer looks like a successful one.** Retrieval
   statuses were parsed and discarded: asking for reranking with an
   unavailable reranker returned unreranked chunks and reported nothing wrong.
-  Results now carry `partial` and `statuses` in their metadata, and a search
-  that produced nothing usable raises `GoodMemRetrievalError`.
+  Results now carry `partial` and `statuses` in their metadata; a search
+  that produced nothing usable returns empty with `partial: true` (the tool)
+  or a warning carrying the statuses (the memory provider), and is never
+  raised.
+- **`FEATURE_DISABLED` is informational by its code alone.** The server
+  defines it as "feature disabled due to missing configuration", so it never
+  means a requested feature was lost; the details are not inspected.
 - **Statuses from a newer server no longer break retrieval.** Codes the SDK
   does not recognize are reported as `UNKNOWN` and mark results partial; they
   never discard chunks and never raise. A truncated NDJSON line was silently

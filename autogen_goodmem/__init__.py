@@ -3,7 +3,6 @@
 from ._config import ChunkingConfig, GoodMemMemoryConfig, PostProcessorConfig
 from ._connection import GoodMemConnection
 from ._context_provider import GoodMemContextProvider, GoodMemIngestionError
-from ._results import GoodMemRetrievalError
 from ._tools import (
     ADMIN_TOOL_NAMES,
     SEARCH_TOOL_NAME,
@@ -23,7 +22,6 @@ __all__ = [
     "GoodMemContextProvider",
     "GoodMemIngestionError",
     "GoodMemMemoryConfig",
-    "GoodMemRetrievalError",
     "GoodMemUploadError",
     "PostProcessorConfig",
     "__version__",

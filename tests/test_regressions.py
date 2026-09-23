@@ -17,7 +17,6 @@ from autogen_core.models import UserMessage
 from autogen_goodmem import (
     GoodMemContextProvider,
     GoodMemMemoryConfig,
-    GoodMemRetrievalError,
     GoodMemUploadError,
     PostProcessorConfig,
     create_goodmem_admin_tools,
@@ -134,10 +133,31 @@ async def test_failed_reranking_is_reported_not_hidden(client, recorder):
     assert [s["code"] for s in meta["statuses"]] == ["NOT_FOUND", "RERANKING_FAILED"]
 
 
-async def test_total_failure_raises_instead_of_looking_empty(client, recorder):
+async def test_total_failure_is_empty_and_warns_not_raises(client, recorder):
+    """Contract Q4b. MemoryQueryResult has nowhere to carry a flag on an empty
+    list, so the failure surfaces as a warning carrying the statuses."""
     recorder.route("POST", ":retrieve", ndjson(status_event("VECTOR_SEARCH_FAILED", "backend down")))
-    with pytest.raises(GoodMemRetrievalError, match="VECTOR_SEARCH_FAILED"):
-        await make_provider(client).query("q")
+    with pytest.warns(UserWarning, match="VECTOR_SEARCH_FAILED"):
+        result = await make_provider(client).query("q")
+    assert result.results == []
+
+
+async def test_feature_disabled_is_informational_whatever_its_details(client, recorder):
+    """Contract Q1: the code alone decides. The server defines FEATURE_DISABLED
+    as 'disabled due to missing configuration', so no details check."""
+    recorder.route(
+        "POST",
+        ":retrieve",
+        ndjson(
+            status_event("FEATURE_DISABLED", "Reranking disabled: no reranker configured.",
+                         feature="reranking", required_param="reranker_id"),
+            memory_event("m1"),
+            chunk_event("c1", "text", "m1"),
+        ),
+    )
+    result = await make_provider(client).query("q")
+    assert result.results[0].metadata["partial"] is False
+    assert "statuses" not in result.results[0].metadata
 
 
 async def test_informational_notice_is_not_treated_as_a_failure(client, recorder):

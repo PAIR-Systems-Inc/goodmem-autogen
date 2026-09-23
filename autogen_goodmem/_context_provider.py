@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+import warnings
 
 from autogen_core import CancellationToken, Component
 from autogen_core.memory import (
@@ -22,7 +23,7 @@ from typing_extensions import Self
 
 from ._config import ChunkingConfig, GoodMemMemoryConfig
 from ._connection import GoodMemConnection, run_cancellable
-from ._results import GoodMemRetrievalError, abstract_reply, classify, hits_from_events
+from ._results import abstract_reply, classify, hits_from_events
 from ._uploads import GoodMemUploadError, resolve_upload_path
 from .filters import combine
 
@@ -48,8 +49,9 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
     and the bundled ext memories work.
 
     Retrieval reports what the server said: results carry ``partial`` and
-    ``statuses`` in their metadata, and a search that produced nothing usable
-    raises rather than returning an empty result that looks like "no matches".
+    ``statuses`` in their metadata. A search that produced nothing usable
+    returns an empty result and emits a warning carrying the statuses -- it is
+    never raised (retrieval status contract, Q4b).
 
     Example::
 
@@ -342,15 +344,19 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         statuses, degraded = classify(events)
         hits = hits_from_events(events, reranked=reranked)[:limit]
 
-        # A failed search must not be mistaken for one that found nothing.
         if degraded and not hits:
-            raise GoodMemRetrievalError(
-                "; ".join(
-                    f"{s.get('code', 'UNKNOWN')}: {s.get('message', '')}" for s in statuses
-                )
-                or "Retrieval failed",
-                statuses=statuses,
+            # Contract Q4b: a failed search returns empty rather than raising.
+            # MemoryQueryResult has nowhere to carry a flag on an empty list, so
+            # the failure is emitted as a warning and logged, with the statuses,
+            # so it is visible somewhere. update_context then injects nothing.
+            summary = "; ".join(
+                f"{s.get('code', 'UNKNOWN')}: {s.get('message', '')}" for s in statuses
             )
+            warnings.warn(
+                f"GoodMem query returned no results and reported a problem: {summary}",
+                stacklevel=2,
+            )
+            logger.warning("GoodMem query failed with no results; statuses=%s", statuses)
 
         reply = abstract_reply(events)
         results: list[MemoryContent] = []

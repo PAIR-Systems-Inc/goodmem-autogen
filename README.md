@@ -70,8 +70,10 @@ system message each turn — the same pattern AutoGen's own `ListMemory` uses.
 - `partial` is `True` when part of the search did not complete — a reranker
   was unavailable, one space was unreachable. The passages are usable but may
   be incomplete, and `statuses` says why. A search that produced nothing
-  usable raises `GoodMemRetrievalError` rather than returning an empty result
-  that reads as "no matches".
+  usable returns an empty result and emits a warning carrying the statuses,
+  so it is distinguishable from "no matches" without being raised. The
+  search tool returns `partial: true` with `statuses` in its JSON for the
+  same case.
 - `score` is passed through exactly as GoodMem reports it. Vector scores are
   opaque similarities that may be negative; reranker scores are relevance
   values. `score_kind` says which you have — which is why

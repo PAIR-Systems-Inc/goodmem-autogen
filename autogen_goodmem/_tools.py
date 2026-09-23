@@ -22,7 +22,7 @@ from typing import Any
 
 from autogen_core.tools import FunctionTool
 
-from ._results import GoodMemRetrievalError, abstract_reply, classify, hits_from_events
+from ._results import abstract_reply, classify, hits_from_events
 from ._typing import AsyncGoodmemClient
 from ._uploads import resolve_upload_path
 from .filters import combine, from_mapping
@@ -86,19 +86,14 @@ def create_goodmem_search_tool(
         statuses, degraded = classify(events)
         hits = hits_from_events(events, reranked=reranked)[:limit]
 
-        if degraded and not hits:
-            raise GoodMemRetrievalError(
-                "Search failed: "
-                + "; ".join(f"{s.get('code')}: {s.get('message')}" for s in statuses),
-                statuses=statuses,
-            )
-
         payload: dict[str, Any] = {
             "query": query,
             "results": hits,
             "total_results": len(hits),
-            # True when part of the search did not complete: the passages are
-            # usable but may be incomplete, and statuses says why.
+            # True when the server reported a real problem during the search.
+            # With passages, they are usable but may be incomplete; with none,
+            # the search failed rather than found nothing. Never raised: the
+            # model reads `statuses` and decides. (Retrieval status contract.)
             "partial": degraded,
         }
         if statuses:
