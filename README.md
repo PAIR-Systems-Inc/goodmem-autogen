@@ -1,11 +1,18 @@
 # autogen-goodmem
 
-[GoodMem](https://goodmem.ai) memory and tools for the [AutoGen](https://github.com/microsoft/autogen) agent framework.
+[GoodMem](https://goodmem.ai) memory and tools for the
+[AutoGen](https://github.com/microsoft/autogen) agent framework.
 
-`autogen-goodmem` gives an AutoGen agent two things:
+Two ways in:
 
-1. **`GoodMemContextProvider`** — an `autogen_core.memory.Memory` implementation backed by a GoodMem space, so context retrieval is automatic on every turn.
-2. **`create_goodmem_tools(client)`** — 11 `FunctionTool`s the agent can call directly to manage spaces and memories.
+1. **`GoodMemContextProvider`** — an `autogen_core.memory.Memory` backed by a
+   GoodMem space, so relevant passages are injected into the model context on
+   every turn.
+2. **`create_goodmem_search_tool` / `create_goodmem_admin_tools`** — function
+   tools an agent can call directly.
+
+Built on the official `goodmem` SDK's async client, so nothing blocks the
+event loop.
 
 ## Install
 
@@ -13,83 +20,112 @@
 pip install autogen-goodmem
 ```
 
-## Quickstart
+Requires Python 3.10+, `autogen-core` 0.7.5+. Version 0.2 is a break from
+0.1 — see [CHANGELOG](CHANGELOG.md) for the mapping.
 
-### As an AutoGen `Memory`
+## As an AutoGen `Memory`
 
 ```python
-import asyncio
 from autogen_core.memory import MemoryContent, MemoryMimeType
 from autogen_goodmem import GoodMemContextProvider, GoodMemMemoryConfig
 
-
-async def main() -> None:
-    provider = GoodMemContextProvider(
-        config=GoodMemMemoryConfig(
-            base_url="https://localhost:8080",
-            api_key="gm_...",
-            space_name="my-kb",
-            embedder_id="<embedder-uuid>",
-            verify_ssl=False,
-        )
+provider = GoodMemContextProvider(
+    config=GoodMemMemoryConfig(
+        base_url="https://goodmem.example.com",
+        api_key="gm_...",              # stored as SecretStr, never serialized
+        space_name="handbook",         # or space_id="..." to skip the lookup
+        embedder_id="<embedder-uuid>",
     )
-    await provider.add(MemoryContent(content="The capital of France is Paris.", mime_type=MemoryMimeType.TEXT))
-    results = await provider.query("What is the capital of France?")
-    for r in results.results:
-        print(r.content)
-    await provider.close()
+)
 
+await provider.add(MemoryContent(
+    content="Refunds above $500 need a manager's approval.",
+    mime_type=MemoryMimeType.TEXT,
+    metadata={"title": "handbook", "category": "policy"},
+))
 
-asyncio.run(main())
+results = await provider.query("who approves a large refund?")
+await provider.close()
 ```
 
-### As tools on an agent
+`add()` waits for the memory to finish indexing by default, so a query right
+after it finds the result. Searching is never used as a way to wait.
+
+Attach it to an agent and `update_context` injects retrieved passages as a
+system message each turn — the same pattern AutoGen's own `ListMemory` uses.
+
+### What a result carries
+
+`MemoryContent` has no score field, so provenance lives in `metadata`:
 
 ```python
-from autogen_goodmem import GoodMemClient, create_goodmem_tools
-
-client = GoodMemClient(base_url="https://localhost:8080", api_key="gm_...", verify_ssl=False)
-tools = create_goodmem_tools(client)  # 11 FunctionTools
-# pass `tools=tools` to your AssistantAgent
+{
+  "title": "handbook", "category": "policy",   # the memory's own metadata
+  "chunk_id": "...", "memory_id": "...", "space_id": "...", "source": "...",
+  "score": -0.53, "score_kind": "vector",
+  "partial": False, "statuses": [],
+}
 ```
 
-## Tool surface
+- `partial` is `True` when part of the search did not complete — a reranker
+  was unavailable, one space was unreachable. The passages are usable but may
+  be incomplete, and `statuses` says why. A search that produced nothing
+  usable raises `GoodMemRetrievalError` rather than returning an empty result
+  that reads as "no matches".
+- `score` is passed through exactly as GoodMem reports it. Vector scores are
+  opaque similarities that may be negative; reranker scores are relevance
+  values. `score_kind` says which you have — which is why
+  `relevance_threshold` requires a `reranker_id`.
 
-`create_goodmem_tools(client)` returns these 11 tools in order:
+## As tools
 
-| Tool | Purpose |
-| --- | --- |
-| `goodmem_list_embedders` | List embedder models available on the server. |
-| `goodmem_list_spaces` | List all spaces visible to the API key. |
-| `goodmem_get_space` | Fetch one space by ID. |
-| `goodmem_create_space` | Create a space (idempotent by name). |
-| `goodmem_update_space` | Update name / publicRead / labels / chunking. |
-| `goodmem_delete_space` | Delete a space and everything in it. |
-| `goodmem_create_memory` | Add a memory from text or a local file. |
-| `goodmem_list_memories` | Paginated listing of a space's memories. |
-| `goodmem_retrieve_memories` | Semantic retrieval, optional reranker + LLM. |
-| `goodmem_get_memory` | Fetch a memory's metadata and original content. |
-| `goodmem_delete_memory` | Delete a memory and its embeddings. |
+```python
+from autogen_goodmem import create_goodmem_search_tool, create_goodmem_admin_tools
 
-`goodmem_retrieve_memories` (and `GoodMemClient.retrieve_memories`) accept the optional post-processor params: `reranker_id`, `llm_id`, `relevance_threshold` (0-1), `llm_temperature` (0-2), `max_results`, `chronological_resort`.
+search = create_goodmem_search_tool(
+    client, space_ids=["<space-id>"], limit=5,
+    reranker_id="<reranker-uuid>",            # optional
+    metadata_filter={"category": "policy"},   # optional, escaped for you
+)
+```
 
-## Integration tests
+The model supplies only the query; spaces, reranking and filters are yours, so
+an agent cannot redirect a search or widen it mid-run.
 
-The tests in `tests/test_goodmem_integration.py` exercise every public method against a live GoodMem server. They are opt-in via the `integration` marker.
+`create_goodmem_admin_tools(client)` adds space and memory management. These
+carry the authority of the configured API key — give them only to agents that
+need them. File upload is only created when you pass `upload_dir`, and paths
+resolving outside that directory are refused before the file is opened.
+
+## Cancellation
+
+`add`, `add_file` and `query` honour an `autogen_core.CancellationToken`: an
+already-cancelled token prevents the request, and cancelling mid-flight aborts
+it.
+
+## Clearing a space
+
+`clear()` deletes every memory in the space and requires
+`allow_clear=True` on the config, so a reflexive `clear()` cannot empty a
+space by accident.
+
+## Filters
+
+A filter is a GoodMem expression applied to every configured space, e.g.
+`CAST(val('$.category') AS TEXT) = 'policy'`. Pass `metadata_filter={...}` and
+it is built and escaped for you. Writing one by hand: inside a quoted value
+escape `'` as `\'` and `\` as `\\` — SQL-style `''` doubling is rejected by
+the server.
+
+## Development
 
 ```bash
 pip install -e ".[dev]"
-
-export GOODMEM_API_KEY=gm_...
-export GOODMEM_BASE_URL=https://localhost:8080
-export GOODMEM_EMBEDDER_ID=<uuid>
-export GOODMEM_RERANKER_ID=<uuid>
-export GOODMEM_LLM_ID=<uuid>
-export GOODMEM_PDF_PATH=/path/to/sample.pdf   # optional
-
-python -m pytest tests/test_goodmem_integration.py -v -s -m integration
+pytest                     # offline: the real SDK over a mock transport
+GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... pytest -m integration
 ```
 
-## License
+Offline tests use event shapes captured from a live server. There is no
+default API key — live tests skip unless the environment provides one.
 
-MIT
+MIT.

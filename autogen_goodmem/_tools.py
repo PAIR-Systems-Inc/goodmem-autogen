@@ -1,21 +1,38 @@
-"""Factory for the 11 GoodMem AutoGen ``FunctionTool`` instances.
+"""AutoGen ``FunctionTool`` factories for GoodMem.
 
-Each tool is a thin wrapper around :class:`GoodMemClient`, exposed as an
-AutoGen ``FunctionTool`` that an agent can call. Tool names are prefixed
-with ``goodmem_`` so multiple memory backends can coexist on one agent.
+Two factories, because the two jobs have very different blast radii:
+
+* :func:`create_goodmem_search_tool` — one read-only search tool. The model
+  supplies a query; spaces, reranking and filters are set by the developer,
+  so a model cannot redirect the search or widen it mid-run.
+* :func:`create_goodmem_admin_tools` — space and memory management. These
+  carry the authority of the configured API key. Give them only to agents
+  that need them.
+
+AutoGen feeds a tool exception's ``str()`` straight back to the model
+(``StaticWorkbench._format_errors``), so messages here stay free of
+credentials and internal detail.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from collections.abc import Callable
+import json
+from typing import Any
 
 from autogen_core.tools import FunctionTool
 
-from ._client import GoodMemClient
+from ._results import GoodMemRetrievalError, abstract_reply, classify, hits_from_events
+from ._typing import AsyncGoodmemClient
+from ._uploads import resolve_upload_path
+from .filters import combine, from_mapping
 
 
-TOOL_NAMES: List[str] = [
+SEARCH_TOOL_NAME = "goodmem_search"
+
+ADMIN_TOOL_NAMES: list[str] = [
     "goodmem_list_embedders",
+    "goodmem_list_rerankers",
     "goodmem_list_spaces",
     "goodmem_get_space",
     "goodmem_create_space",
@@ -23,142 +40,210 @@ TOOL_NAMES: List[str] = [
     "goodmem_delete_space",
     "goodmem_create_memory",
     "goodmem_list_memories",
-    "goodmem_retrieve_memories",
     "goodmem_get_memory",
     "goodmem_delete_memory",
 ]
 
 
-def create_goodmem_tools(client: GoodMemClient) -> List[FunctionTool]:
-    """Return the 11 GoodMem ``FunctionTool`` instances bound to ``client``.
+def create_goodmem_search_tool(
+    client: AsyncGoodmemClient,
+    *,
+    space_ids: list[str],
+    limit: int = 5,
+    fetch_k: int | None = None,
+    reranker_id: str | None = None,
+    filter: str | None = None,
+    metadata_filter: dict[str, Any] | None = None,
+    name: str = SEARCH_TOOL_NAME,
+    description: str | None = None,
+) -> FunctionTool:
+    """A search tool whose only model-supplied argument is the query."""
+    if not space_ids:
+        raise ValueError("space_ids must not be empty.")
+    expression = combine(filter, from_mapping(metadata_filter) if metadata_filter else None)
+    reranked = bool(reranker_id)
 
-    The returned list is in the order declared in :data:`TOOL_NAMES`.
+    async def goodmem_search(query: str) -> str:
+        """Search stored knowledge for passages relevant to a question."""
+        if not query.strip():
+            raise ValueError("query must not be empty")
+
+        call: dict[str, Any] = {
+            "message": query,
+            "requested_size": fetch_k or limit,
+            "fetch_memory": True,
+            "stream": False,
+        }
+        if expression is None:
+            call["space_ids"] = list(space_ids)
+        else:
+            call["space_keys"] = [{"spaceId": s, "filter": expression} for s in space_ids]
+        if reranked:
+            call["reranker_id"] = reranker_id
+            call["max_results"] = limit
+
+        events = list(await client.memories.retrieve(**call))
+        statuses, degraded = classify(events)
+        hits = hits_from_events(events, reranked=reranked)[:limit]
+
+        if degraded and not hits:
+            raise GoodMemRetrievalError(
+                "Search failed: "
+                + "; ".join(f"{s.get('code')}: {s.get('message')}" for s in statuses),
+                statuses=statuses,
+            )
+
+        payload: dict[str, Any] = {
+            "query": query,
+            "results": hits,
+            "total_results": len(hits),
+            # True when part of the search did not complete: the passages are
+            # usable but may be incomplete, and statuses says why.
+            "partial": degraded,
+        }
+        if statuses:
+            payload["statuses"] = statuses
+        if reply := abstract_reply(events):
+            payload["abstract_reply"] = reply
+        return json.dumps(payload, default=str)
+
+    return FunctionTool(
+        goodmem_search,
+        name=name,
+        description=description
+        or "Search stored knowledge for passages relevant to a natural-language query.",
+    )
+
+
+def create_goodmem_admin_tools(
+    client: AsyncGoodmemClient,
+    *,
+    upload_dir: str | None = None,
+    max_items: int = 100,
+) -> list[FunctionTool]:
+    """Space and memory management tools.
+
+    ``upload_dir`` enables ``goodmem_upload_file``; without it that tool is
+    not created at all, so no agent can name a path on the host.
     """
 
-    async def goodmem_list_embedders() -> List[Dict[str, Any]]:
-        """List available embedder models on the GoodMem server."""
-        return await client.list_embedders()
+    async def goodmem_list_embedders() -> str:
+        """List embedders available for creating spaces."""
+        items = [e.model_dump(exclude_none=True) async for e in await client.embedders.list(max_items=max_items)]
+        return json.dumps({"embedders": items, "returned": len(items)}, default=str)
 
-    async def goodmem_list_spaces() -> List[Dict[str, Any]]:
-        """List all GoodMem spaces visible to the current API key."""
-        return await client.list_spaces()
+    async def goodmem_list_rerankers() -> str:
+        """List rerankers available to improve search result ordering."""
+        items = [r.model_dump(exclude_none=True) async for r in await client.rerankers.list(max_items=max_items)]
+        return json.dumps({"rerankers": items, "returned": len(items)}, default=str)
 
-    async def goodmem_get_space(space_id: str) -> Dict[str, Any]:
-        """Fetch a single GoodMem space by ID."""
-        return await client.get_space(space_id)
+    async def goodmem_list_spaces(name_filter: str | None = None) -> str:
+        """List GoodMem spaces, optionally filtered by a name glob."""
+        page = await client.spaces.list(
+            max_items=max_items, **({"name_filter": name_filter} if name_filter else {})
+        )
+        items = [s.model_dump(exclude_none=True) async for s in page]
+        return json.dumps(
+            {"spaces": items, "returned": len(items), "truncated": len(items) >= max_items},
+            default=str,
+        )
 
-    async def goodmem_create_space(
-        name: str,
-        embedder_id: str,
-    ) -> Dict[str, Any]:
-        """Create a GoodMem space, or reuse the existing one with the same name.
+    async def goodmem_get_space(space_id: str) -> str:
+        """Fetch one space by ID, with its embedders and labels."""
+        space = await client.spaces.get(id=space_id)
+        return json.dumps(space.model_dump(exclude_none=True), default=str)
 
-        Returns ``{spaceId, name, embedderId, reused}``.
-        """
-        return await client.create_space(name=name, embedder_id=embedder_id)
+    async def goodmem_create_space(name: str, embedder_id: str) -> str:
+        """Create a new space. Fails if a space with that name already exists."""
+        space = await client.spaces.create(
+            name=name, space_embedders=[{"embedderId": embedder_id}]
+        )
+        return json.dumps(space.model_dump(exclude_none=True), default=str)
 
     async def goodmem_update_space(
         space_id: str,
-        name: Optional[str] = None,
-        public_read: Optional[bool] = None,
-        replace_labels: Optional[Dict[str, str]] = None,
-        merge_labels: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        """Update a GoodMem space.
+        name: str | None = None,
+        merge_labels: dict[str, str] | None = None,
+        replace_labels: dict[str, str] | None = None,
+    ) -> str:
+        """Rename a space or change its labels."""
+        request: dict[str, Any] = {}
+        if name is not None:
+            request["name"] = name
+        if merge_labels:
+            request["mergeLabels"] = merge_labels
+        if replace_labels:
+            request["replaceLabels"] = replace_labels
+        if not request:
+            raise ValueError("Nothing to update: pass name, merge_labels or replace_labels.")
+        space = await client.spaces.update(id=space_id, request=request)
+        return json.dumps(space.model_dump(exclude_none=True), default=str)
 
-        Only ``name``, ``publicRead``, ``replaceLabels``, ``mergeLabels``, and
-        ``defaultChunkingConfig`` are accepted by the server — passing a bare
-        ``labels`` field returns 400, so prefer ``replace_labels`` (full
-        replacement) or ``merge_labels`` (additive merge).
-        """
-        return await client.update_space(
-            space_id,
-            name=name,
-            public_read=public_read,
-            replace_labels=replace_labels,
-            merge_labels=merge_labels,
-        )
-
-    async def goodmem_delete_space(space_id: str) -> Dict[str, Any]:
-        """Permanently delete a GoodMem space and every memory inside it."""
-        return await client.delete_space(space_id)
+    async def goodmem_delete_space(space_id: str) -> str:
+        """Permanently delete a space and every memory in it."""
+        await client.spaces.delete(id=space_id)
+        return json.dumps({"deleted": True, "space_id": space_id})
 
     async def goodmem_create_memory(
         space_id: str,
-        content: Optional[str] = None,
-        file_path: Optional[str] = None,
-        content_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Create a memory in a space from inline text or a local file.
-
-        Exactly one of ``content`` (inline text) or ``file_path`` must be
-        provided. Binary files (PDF, images) are base64-encoded; text files
-        are sent inline. MIME type is auto-detected from the extension when
-        ``content_type`` is omitted.
-        """
-        return await client.create_memory(
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Store text in a space so later searches can find it."""
+        if not content.strip():
+            raise ValueError("content must not be empty")
+        memory = await client.memories.create(
             space_id=space_id,
-            content=content,
-            file_path=file_path,
-            content_type=content_type,
-            metadata=metadata,
+            original_content=content,
+            content_type="text/plain",
+            metadata=metadata or None,
+        )
+        return json.dumps(memory.model_dump(exclude_none=True), default=str)
+
+    async def goodmem_list_memories(space_id: str) -> str:
+        """List the memories stored in a space."""
+        items = [
+            m.model_dump(exclude_none=True)
+            async for m in await client.memories.list(space_id=space_id, max_items=max_items)
+        ]
+        return json.dumps(
+            {"memories": items, "returned": len(items), "truncated": len(items) >= max_items},
+            default=str,
         )
 
-    async def goodmem_list_memories(
-        space_id: str,
-        next_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """List memories in a space (paginated via ``nextToken``).
-
-        Note: GoodMem has no top-level ``GET /v1/memories`` — listing is
-        always scoped to a space.
-        """
-        return await client.list_memories(space_id, next_token=next_token)
-
-    async def goodmem_retrieve_memories(
-        message: str,
-        space_ids: List[str],
-        max_results: int = 5,
-        fetch_memory: bool = True,
-        wait_for_indexing: bool = False,
-        reranker_id: Optional[str] = None,
-        llm_id: Optional[str] = None,
-        relevance_threshold: Optional[float] = None,
-        llm_temperature: Optional[float] = None,
-        chronological_resort: bool = False,
-    ) -> Dict[str, Any]:
-        """Semantic retrieval against one or more GoodMem spaces.
-
-        Optionally re-orders results with ``reranker_id`` and/or generates a
-        natural-language ``abstractReply`` with ``llm_id``.
-        """
-        return await client.retrieve_memories(
-            message=message,
-            space_ids=space_ids,
-            max_results=max_results,
-            fetch_memory=fetch_memory,
-            wait_for_indexing=wait_for_indexing,
-            reranker_id=reranker_id,
-            llm_id=llm_id,
-            relevance_threshold=relevance_threshold,
-            llm_temperature=llm_temperature,
-            chronological_resort=chronological_resort,
+    async def goodmem_get_memory(memory_id: str, include_content: bool = True) -> str:
+        """Fetch a memory by ID, with its metadata and readable content."""
+        memory = await client.memories.get(
+            id=memory_id, include_content=include_content or None
         )
+        payload = memory.model_dump(exclude_none=True)
+        # model_dump re-encodes content as base64; the attribute holds bytes.
+        payload.pop("original_content", None)
+        raw = memory.original_content
+        if include_content and raw is not None:
+            content_type = str(memory.content_type or "")
+            if isinstance(raw, str):
+                raw = raw.encode()
+            if content_type.startswith("text/") or "json" in content_type:
+                try:
+                    payload["content"] = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    payload["content_error"] = "Content is not valid UTF-8 text."
+            else:
+                payload["content_omitted"] = (
+                    f"{len(raw)} bytes of {content_type or 'binary'} content is not "
+                    "included; fetch it through the SDK if you need the bytes."
+                )
+        return json.dumps(payload, default=str)
 
-    async def goodmem_get_memory(
-        memory_id: str,
-        include_content: bool = True,
-    ) -> Dict[str, Any]:
-        """Fetch a memory's metadata, and optionally its original content."""
-        return await client.get_memory(memory_id, include_content=include_content)
+    async def goodmem_delete_memory(memory_id: str) -> str:
+        """Permanently delete a memory."""
+        await client.memories.delete(id=memory_id)
+        return json.dumps({"deleted": True, "memory_id": memory_id})
 
-    async def goodmem_delete_memory(memory_id: str) -> Dict[str, Any]:
-        """Permanently delete a memory and its chunks/embeddings."""
-        return await client.delete_memory(memory_id)
-
-    funcs = [
+    funcs: list[Callable[..., Any]] = [
         goodmem_list_embedders,
+        goodmem_list_rerankers,
         goodmem_list_spaces,
         goodmem_get_space,
         goodmem_create_space,
@@ -166,15 +251,49 @@ def create_goodmem_tools(client: GoodMemClient) -> List[FunctionTool]:
         goodmem_delete_space,
         goodmem_create_memory,
         goodmem_list_memories,
-        goodmem_retrieve_memories,
         goodmem_get_memory,
         goodmem_delete_memory,
     ]
+
+    if upload_dir is not None:
+
+        async def goodmem_upload_file(
+            space_id: str,
+            file_name: str,
+            metadata: dict[str, Any] | None = None,
+        ) -> str:
+            """Store a file from the approved upload directory."""
+            import base64
+            import mimetypes
+
+            path = resolve_upload_path(file_name, upload_dir)
+            raw = path.read_bytes()
+            content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            merged = dict(metadata or {})
+            merged.setdefault("title", path.name)
+            kwargs: dict[str, Any] = {
+                "space_id": space_id,
+                "content_type": content_type,
+                "metadata": merged,
+            }
+            if content_type.startswith("text/"):
+                kwargs["original_content"] = raw.decode("utf-8", errors="replace")
+            else:
+                kwargs["original_content_b64"] = base64.b64encode(raw).decode("ascii")
+            memory = await client.memories.create(**kwargs)
+            return json.dumps(memory.model_dump(exclude_none=True), default=str)
+
+        funcs.append(goodmem_upload_file)
+
     return [
-        FunctionTool(
-            f,
-            name=f.__name__,
-            description=(f.__doc__ or f.__name__).strip().splitlines()[0],
-        )
+        FunctionTool(f, name=f.__name__, description=(f.__doc__ or f.__name__).strip().splitlines()[0])
         for f in funcs
     ]
+
+
+__all__ = [
+    "ADMIN_TOOL_NAMES",
+    "SEARCH_TOOL_NAME",
+    "create_goodmem_admin_tools",
+    "create_goodmem_search_tool",
+]
