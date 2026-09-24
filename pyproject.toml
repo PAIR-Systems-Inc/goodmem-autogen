@@ -1,6 +1,6 @@
 [project]
 name = "autogen-goodmem"
-version = "0.1.0"
+version = "0.2.0"
 description = "GoodMem memory and tools for the AutoGen agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "autogen-core>=0.7.5",
-    "httpx>=0.24.0,<1",
+    "goodmem>=0.1.34",
     "pydantic>=2.0,<3",
     "typing-extensions>=4.7",
 ]
@@ -29,6 +29,9 @@ dev = [
     "pytest>=7",
     "pytest-asyncio>=0.23",
     "pytest-timeout",
+    "httpx",
+    "ruff>=0.6",
+    "mypy>=1.11",
     "build",
     "twine",
 ]
@@ -38,9 +41,31 @@ Homepage = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
 Repository = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
 Issues = "https://github.com/PAIR-Systems-Inc/autogen-goodmem/issues"
 
+[tool.ruff]
+target-version = "py310"
+src = ["autogen_goodmem", "tests"]
+
+[tool.ruff.lint]
+extend-select = ["E", "F", "B", "I", "UP", "RUF", "PYI", "TRY", "PERF"]
+ignore = ["E501", "TRY003", "TRY300"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+lines-after-imports = 2
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+disallow_untyped_defs = true
+exclude = ["tests/"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["integration: live-server tests"]
+markers = ["integration: live-server tests (need GOODMEM_BASE_URL and GOODMEM_API_KEY)"]
 
 [build-system]
 requires = ["flit-core>=3.11,<4.0"]

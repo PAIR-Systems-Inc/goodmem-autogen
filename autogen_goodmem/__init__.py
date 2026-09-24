@@ -1,24 +1,30 @@
-"""autogen-goodmem: GoodMem memory + tools for the AutoGen agent framework."""
+"""autogen-goodmem: GoodMem memory and tools for the AutoGen agent framework."""
 
-from ._client import GoodMemClient
 from ._config import ChunkingConfig, GoodMemMemoryConfig, PostProcessorConfig
-from ._context_provider import GoodMemContextProvider
-from ._tools import TOOL_NAMES, create_goodmem_tools
+from ._connection import GoodMemConnection
+from ._context_provider import GoodMemContextProvider, GoodMemIngestionError
+from ._tools import (
+    ADMIN_TOOL_NAMES,
+    SEARCH_TOOL_NAME,
+    create_goodmem_admin_tools,
+    create_goodmem_search_tool,
+)
+from ._uploads import GoodMemUploadError
 
-# Backwards-compatible alias for code that imported GoodMemMemory from the
-# autogen-ext monorepo location.
-GoodMemMemory = GoodMemContextProvider
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
-    "GoodMemClient",
-    "GoodMemContextProvider",
-    "GoodMemMemory",
-    "GoodMemMemoryConfig",
+    "ADMIN_TOOL_NAMES",
+    "SEARCH_TOOL_NAME",
     "ChunkingConfig",
+    "GoodMemConnection",
+    "GoodMemContextProvider",
+    "GoodMemIngestionError",
+    "GoodMemMemoryConfig",
+    "GoodMemUploadError",
     "PostProcessorConfig",
-    "create_goodmem_tools",
-    "TOOL_NAMES",
     "__version__",
+    "create_goodmem_admin_tools",
+    "create_goodmem_search_tool",
 ]
