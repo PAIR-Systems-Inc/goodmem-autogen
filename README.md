@@ -127,10 +127,17 @@ the server.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest                     # offline: the real SDK over a mock transport
-GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... pytest -m integration
+uv venv && uv pip install -e ".[dev]"
+uv run ruff check autogen_goodmem tests
+uv run mypy autogen_goodmem
+uv run pytest -m "not integration"   # offline: the real SDK over a mock transport
+GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... \
+  GOODMEM_RERANKER_ID=... GOODMEM_VERIFY_SSL=false uv run pytest -m integration
 ```
+
+These are the commands CI runs. `GOODMEM_RERANKER_ID` is optional — the
+reranker tests skip without it; `GOODMEM_VERIFY_SSL=false` is for a local
+server with a self-signed certificate.
 
 Offline tests use event shapes captured from a live server. There is no
 default API key — live tests skip unless the environment provides one.
