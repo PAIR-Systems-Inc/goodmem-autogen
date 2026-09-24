@@ -344,6 +344,20 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         statuses, degraded = classify(events)
         hits = hits_from_events(events, reranked=reranked)[:limit]
 
+        if reranked and pp and pp.relevance_threshold is not None and not hits and not degraded:
+            # The threshold is applied server-side, so the dropped scores are
+            # not visible here. Reranker scales are model-dependent (Voyage
+            # rerank-2.5 ~0.27..0.93, Jina jina-reranker-v3 ~-0.14..0.43 on
+            # the same documents); a threshold tuned for one empties the
+            # other, and an empty result reads as "no matches".
+            warnings.warn(
+                f"relevance_threshold={pp.relevance_threshold} may have removed "
+                "every reranked result: the server returned none and reported no "
+                "problem. Reranker score scales are model-dependent and not "
+                "necessarily 0-1; calibrate the threshold for the reranker in use.",
+                stacklevel=2,
+            )
+
         if degraded and not hits:
             # Contract Q4b: a failed search returns empty rather than raising.
             # MemoryQueryResult has nowhere to carry a flag on an empty list, so

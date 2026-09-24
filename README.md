@@ -75,9 +75,14 @@ system message each turn — the same pattern AutoGen's own `ListMemory` uses.
   search tool returns `partial: true` with `statuses` in its JSON for the
   same case.
 - `score` is passed through exactly as GoodMem reports it. Vector scores are
-  opaque similarities that may be negative; reranker scores are relevance
-  values. `score_kind` says which you have — which is why
-  `relevance_threshold` requires a `reranker_id`.
+  opaque similarities that may be negative; reranker scores are on a scale
+  that depends on the reranker model (Voyage `rerank-2.5` ~`0.27..0.93`, Jina
+  `jina-reranker-v3` ~`-0.14..0.43` on the same documents). `score_kind` says
+  which you have — which is why `relevance_threshold` requires a
+  `reranker_id`, and why it must be calibrated for the reranker in use rather
+  than assumed to be 0–1. The threshold is applied by the server; if it
+  removes every result the provider warns, since an empty result would
+  otherwise read as "no matches".
 
 ## As tools
 

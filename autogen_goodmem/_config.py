@@ -14,9 +14,12 @@ class PostProcessorConfig(BaseModel):
     relevance_threshold: float | None = Field(
         default=None,
         description=(
-            "Minimum reranker score. Only meaningful with reranker_id: a raw "
-            "vector score is an opaque similarity that may be negative, not a "
-            "0-1 relevance value."
+            "Minimum reranker score, applied by the server. Only meaningful "
+            "with reranker_id: a raw vector score is an opaque similarity that "
+            "may be negative. The scale depends on the reranker model (Voyage "
+            "rerank-2.5 ~0.27..0.93, Jina jina-reranker-v3 ~-0.14..0.43 on the "
+            "same documents) and is not necessarily 0-1; calibrate it for the "
+            "reranker in use."
         ),
     )
     chronological_resort: bool = Field(default=False)

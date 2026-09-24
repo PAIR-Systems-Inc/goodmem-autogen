@@ -416,3 +416,18 @@ async def test_update_context_ignores_a_non_text_turn(client, recorder):
     result = await make_provider(client).update_context(context)
     assert result.memories.results == []
     assert recorder.requests == [], "no search should be issued for a non-text turn"
+
+
+async def test_a_threshold_that_may_have_emptied_the_result_warns(client, recorder):
+    """The server applies relevance_threshold, so the dropped scores are not
+    visible here. Measured live 2026-09-24: Voyage rerank-2.5 0.27..0.93 and
+    Jina jina-reranker-v3 -0.14..0.43 on the same documents, so a threshold
+    tuned for one empties the other. Nothing back + nothing reported must
+    not pass as a plain miss."""
+    recorder.route("POST", ":retrieve", ndjson(memory_event("m1")))
+    provider = make_provider(
+        client, post_processor=PostProcessorConfig(reranker_id="jina", relevance_threshold=0.6)
+    )
+    with pytest.warns(UserWarning, match="relevance_threshold=0.6 may have removed"):
+        result = await provider.query("q")
+    assert result.results == []
