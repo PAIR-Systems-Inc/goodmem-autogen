@@ -135,13 +135,23 @@ def create_goodmem_admin_tools(
 
     async def goodmem_list_embedders() -> str:
         """List embedders available for creating spaces."""
-        items = [e.model_dump(exclude_none=True) async for e in await client.embedders.list(max_items=max_items)]
-        return json.dumps({"embedders": items, "returned": len(items)}, default=str)
+        # embedders.list() takes no max_items and returns a plain list: only
+        # spaces.list and memories.list paginate in the SDK.
+        found = await client.embedders.list()
+        items = [e.model_dump(exclude_none=True) for e in found][:max_items]
+        return json.dumps(
+            {"embedders": items, "returned": len(items), "truncated": len(found) > max_items},
+            default=str,
+        )
 
     async def goodmem_list_rerankers() -> str:
         """List rerankers available to improve search result ordering."""
-        items = [r.model_dump(exclude_none=True) async for r in await client.rerankers.list(max_items=max_items)]
-        return json.dumps({"rerankers": items, "returned": len(items)}, default=str)
+        found = await client.rerankers.list()
+        items = [r.model_dump(exclude_none=True) for r in found][:max_items]
+        return json.dumps(
+            {"rerankers": items, "returned": len(items), "truncated": len(found) > max_items},
+            default=str,
+        )
 
     async def goodmem_list_spaces(name_filter: str | None = None) -> str:
         """List GoodMem spaces, optionally filtered by a name glob."""

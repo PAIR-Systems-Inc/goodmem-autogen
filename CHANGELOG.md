@@ -31,6 +31,19 @@
 
 Tests that used placeholder IDs such as `"space-1"` now use UUIDs.
 
+### Fixed
+
+- **`goodmem_list_embedders` and `goodmem_list_rerankers` failed on every
+  call** with `TypeError: AsyncEmbeddersAPI.list() got an unexpected keyword
+  argument 'max_items'` (goodmem 0.1.34 and 0.1.35 alike): only
+  `spaces.list` and `memories.list` paginate; `embedders.list()` and
+  `rerankers.list()` take no `max_items` and return a plain list. An agent
+  with the admin tools could not find an embedder ID for
+  `goodmem_create_space`. Both now list, cap the result at `max_items` and
+  report `truncated`. The client Protocol declares `list()` without
+  parameters, so mypy refuses the old call. Every admin tool now has an
+  offline test through the real SDK.
+
 ## 0.2.0
 
 0.2 is a deliberate API break. The integration uses the official `goodmem`

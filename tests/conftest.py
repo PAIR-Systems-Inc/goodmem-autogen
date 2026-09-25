@@ -158,6 +158,53 @@ def memory_json(
     return payload
 
 
+# Every field the OpenAPI spec marks required, so the SDK's own response
+# models validate these exactly as they would a server's.
+_AUDIT = {
+    "labels": {},
+    "ownerId": "019cfcff-37c5-76d0-bd46-8525e29a9c82",
+    "createdAt": 1789607045012,
+    "updatedAt": 1789607045012,
+    "createdById": "019cfcff-37c7-75ef-be71-06c83dae99c3",
+    "updatedById": "019cfcff-37c7-75ef-be71-06c83dae99c3",
+}
+
+
+def embedder_json(embedder_id: str = EMBEDDER_ID, name: str = "text-embedding-3-small") -> dict[str, Any]:
+    return {
+        "embedderId": embedder_id,
+        "displayName": name,
+        "providerType": "OPENAI",
+        "endpointUrl": "https://api.openai.com/v1",
+        "modelIdentifier": name,
+        "dimensionality": 1536,
+        "distributionType": "DENSE",
+        "supportedModalities": ["TEXT"],
+        **_AUDIT,
+    }
+
+
+def reranker_json(reranker_id: str = RERANKER_ID, name: str = "rerank-2.5") -> dict[str, Any]:
+    return {
+        "rerankerId": reranker_id,
+        "displayName": name,
+        "providerType": "VOYAGE",
+        "endpointUrl": "https://api.voyageai.com/v1",
+        "modelIdentifier": name,
+        "supportedModalities": ["TEXT"],
+        **_AUDIT,
+    }
+
+
+def fixture_events(name: str) -> httpx.Response:
+    """An NDJSON fixture served byte for byte as the server sent it."""
+    return httpx.Response(
+        200,
+        text=(FIXTURES / name).read_text(),
+        headers={"content-type": "application/x-ndjson"},
+    )
+
+
 async def _resolve(response: Any, request: httpx.Request) -> httpx.Response:
     """A route may be a Response, a function, or an async function."""
     if callable(response):
