@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.2.1
+
+### Security
+
+- **An ID that is not a UUID is refused before any request is made.** The
+  `goodmem` SDK puts IDs into request paths unescaped (`/v1/memories/{id}`)
+  and httpx resolves `..` before sending, so on 0.2.0
+  `goodmem_delete_memory(memory_id="../spaces/<id>")` was sent as
+  `DELETE /v1/spaces/<id>` — deleting a whole space — and the tool reported
+  `{"deleted": true}`. `?` and `#` cut a path short the same way
+  (`"<id>#x"` given to `goodmem_list_memories` fetched the space instead),
+  and the server normalises `%2e%2e`, so neither end can be relied on.
+  Measured against a local server that records every request line, with 12
+  hostile ID values through each of 33 ID-taking call paths (396 cases):
+  357 reached the server on 0.2.0; now all 396 are refused and the server
+  receives nothing.
+- Every GoodMem ID is a UUID, so the rule is an allow-list: an `8-4-4-4-12`
+  hex UUID is accepted and lowercased, and anything else raises `ValueError`
+  naming the field ("memory_id must be a UUID ..."). It applies to every ID
+  whatever its source: tool arguments, `space_ids` and `reranker_id` given to
+  `create_goodmem_search_tool` or `query()`, `space_id`, `embedder_id`,
+  `reranker_id` and `llm_id` in the config (including one loaded with
+  `load_component`), and IDs the server returns that `clear()` and the
+  indexing wait put into paths. IDs sent only in a request body are checked
+  the same way for consistency.
+- Tool schemas and the config's JSON schema declare ID fields with
+  `format: uuid` and the pattern, so a model is told what an ID looks like;
+  the check at the SDK call is what enforces it.
+
+Tests that used placeholder IDs such as `"space-1"` now use UUIDs.
+
+### Fixed
+
+- **`goodmem_list_embedders` and `goodmem_list_rerankers` failed on every
+  call** with `TypeError: AsyncEmbeddersAPI.list() got an unexpected keyword
+  argument 'max_items'` (goodmem 0.1.34 and 0.1.35 alike): only
+  `spaces.list` and `memories.list` paginate; `embedders.list()` and
+  `rerankers.list()` take no `max_items` and return a plain list. An agent
+  with the admin tools could not find an embedder ID for
+  `goodmem_create_space`. Both now list, cap the result at `max_items` and
+  report `truncated`. The client Protocol declares `list()` without
+  parameters, so mypy refuses the old call. Every admin tool now has an
+  offline test through the real SDK.
+- **Hits from a failed reranker were labelled `score_kind: "reranker"`.**
+  The label was decided by configuration (`reranker_id` set). When the
+  reranker fails the server sends `RERANKING_FAILED` (and `NOT_FOUND` for a
+  missing reranker) and still returns the vector-search hits; the search
+  tool and `query()` returned those vector similarities (-0.5689, -0.5608 in
+  a live capture) as reranker scores. `score_kind` is now read from the
+  response: those hits are kept, labelled `vector`, and marked `partial`
+  with the statuses (retrieval status contract, Q4a), and the
+  `relevance_threshold` warning no longer considers them.
+- **The README's "As tools" quickstart, which is also the PyPI description,
+  raised `NameError`**: it used `client` without creating one. It now
+  creates a `goodmem.AsyncGoodmem`, shows `verify=` for a self-signed
+  server, runs one search and closes the client. Every Python snippet in the
+  README is executed by the offline suite against a local server. The
+  development section no longer lists a `GOODMEM_RERANKER_ID` variable that
+  no test reads, or says CI runs the live suite.
+
 ## 0.2.0
 
 0.2 is a deliberate API break. The integration uses the official `goodmem`

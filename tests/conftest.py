@@ -26,6 +26,16 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # GoodMem vector scores are opaque similarities, not 0-1 relevance.
 REAL_VECTOR_SCORE = -0.5345187187194824
 
+# GoodMem IDs are UUIDs, and the integration refuses anything else before a
+# request is made, so every ID a test sends is real-shaped.
+SPACE_ID = "5b1e9f3a-2c7d-4e8b-9a6f-1d3c5e7a9b20"
+OTHER_SPACE_ID = "8e2a6c4f-1b9d-4f3e-a7c5-3e9b1d7f5a42"
+EMBEDDER_ID = "2d7f1a9c-6e3b-4c8d-b5a1-7f9e3c1b5d64"
+OTHER_EMBEDDER_ID = "9a4c8e2b-7d1f-4a6c-8e3b-5c1a9f7d3e86"
+RERANKER_ID = "4f8b2e6a-9c3d-4b7f-a1e5-8d2c6a4f9b17"
+MEMORY_ID = "6c3a9e1f-4b8d-4e2a-9f7c-2b6e4a8c1d39"
+MEMORY_ID_2 = "1e5b7d3f-8a2c-4f6e-b9d1-4a8c2e6f3b5a"
+
 
 def real_events() -> list[dict[str, Any]]:
     text = (FIXTURES / "retrieve_real.ndjson").read_text()
@@ -85,7 +95,7 @@ def ndjson(*objects: dict[str, Any]) -> httpx.Response:
     )
 
 
-def space_json(space_id: str, name: str, embedder_id: str = "emb-1") -> dict[str, Any]:
+def space_json(space_id: str, name: str, embedder_id: str = EMBEDDER_ID) -> dict[str, Any]:
     """A Space with the fields the server really returns."""
     return {
         "spaceId": space_id,
@@ -130,7 +140,7 @@ def memory_json(
     """A Memory as the server returns it. ``originalContent`` is base64."""
     payload: dict[str, Any] = {
         "memoryId": memory_id,
-        "spaceId": "space-1",
+        "spaceId": SPACE_ID,
         "originalContentLength": 11,
         "originalContentSha256": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
         "contentType": content_type,
@@ -146,6 +156,53 @@ def memory_json(
     if content_b64 is not None:
         payload["originalContent"] = content_b64
     return payload
+
+
+# Every field the OpenAPI spec marks required, so the SDK's own response
+# models validate these exactly as they would a server's.
+_AUDIT = {
+    "labels": {},
+    "ownerId": "019cfcff-37c5-76d0-bd46-8525e29a9c82",
+    "createdAt": 1789607045012,
+    "updatedAt": 1789607045012,
+    "createdById": "019cfcff-37c7-75ef-be71-06c83dae99c3",
+    "updatedById": "019cfcff-37c7-75ef-be71-06c83dae99c3",
+}
+
+
+def embedder_json(embedder_id: str = EMBEDDER_ID, name: str = "text-embedding-3-small") -> dict[str, Any]:
+    return {
+        "embedderId": embedder_id,
+        "displayName": name,
+        "providerType": "OPENAI",
+        "endpointUrl": "https://api.openai.com/v1",
+        "modelIdentifier": name,
+        "dimensionality": 1536,
+        "distributionType": "DENSE",
+        "supportedModalities": ["TEXT"],
+        **_AUDIT,
+    }
+
+
+def reranker_json(reranker_id: str = RERANKER_ID, name: str = "rerank-2.5") -> dict[str, Any]:
+    return {
+        "rerankerId": reranker_id,
+        "displayName": name,
+        "providerType": "VOYAGE",
+        "endpointUrl": "https://api.voyageai.com/v1",
+        "modelIdentifier": name,
+        "supportedModalities": ["TEXT"],
+        **_AUDIT,
+    }
+
+
+def fixture_events(name: str) -> httpx.Response:
+    """An NDJSON fixture served byte for byte as the server sent it."""
+    return httpx.Response(
+        200,
+        text=(FIXTURES / name).read_text(),
+        headers={"content-type": "application/x-ndjson"},
+    )
 
 
 async def _resolve(response: Any, request: httpx.Request) -> httpx.Response:

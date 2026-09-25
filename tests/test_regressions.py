@@ -26,8 +26,15 @@ import httpx
 import pytest
 
 from .conftest import (
+    EMBEDDER_ID,
     INFO_STATUS,
+    MEMORY_ID,
+    MEMORY_ID_2,
+    OTHER_EMBEDDER_ID,
+    OTHER_SPACE_ID,
     REAL_VECTOR_SCORE,
+    RERANKER_ID,
+    SPACE_ID,
     chunk_event,
     memory_event,
     memory_json,
@@ -41,7 +48,7 @@ def make_provider(client, **overrides):
     config = GoodMemMemoryConfig(
         base_url="https://goodmem.test",
         api_key="gm_test_key",
-        space_id="space-1",
+        space_id=SPACE_ID,
         **overrides,
     )
     return GoodMemContextProvider(config=config, client=client)
@@ -73,9 +80,9 @@ async def test_clear_refuses_without_opt_in(client, recorder):
 
 
 async def test_clear_actually_deletes_when_allowed(client, recorder):
-    recorder.route("GET", "/space-1/memories", httpx.Response(200, json={"memories": [memory_json("m1"), memory_json("m2")]}))
-    recorder.route("DELETE", "/memories/m1", httpx.Response(204))
-    recorder.route("DELETE", "/memories/m2", httpx.Response(204))
+    recorder.route("GET", f"/{SPACE_ID}/memories", httpx.Response(200, json={"memories": [memory_json(MEMORY_ID), memory_json(MEMORY_ID_2)]}))
+    recorder.route("DELETE", f"/memories/{MEMORY_ID}", httpx.Response(204))
+    recorder.route("DELETE", f"/memories/{MEMORY_ID_2}", httpx.Response(204))
     provider = make_provider(client, allow_clear=True)
     await provider.clear()
     deletes = [p for p in recorder.paths() if p.startswith("DELETE")]
@@ -124,7 +131,7 @@ async def test_failed_reranking_is_reported_not_hidden(client, recorder):
             chunk_event("c1", "fallback text", "m1"),
         ),
     )
-    provider = make_provider(client, post_processor=PostProcessorConfig(reranker_id="r-missing"))
+    provider = make_provider(client, post_processor=PostProcessorConfig(reranker_id=RERANKER_ID))
     result = await provider.query("q")
 
     assert len(result.results) == 1
@@ -245,10 +252,10 @@ async def test_add_waits_for_its_own_memory_never_by_searching(client, recorder)
     def get_memory(request: httpx.Request) -> httpx.Response:
         polls["n"] += 1
         status = "PENDING" if polls["n"] < 3 else "COMPLETED"
-        return httpx.Response(200, json=memory_json("m-new", status=status))
+        return httpx.Response(200, json=memory_json(MEMORY_ID, status=status))
 
-    recorder.route("POST", "/v1/memories", httpx.Response(201, json=memory_json("m-new", status="PENDING")))
-    recorder.route("GET", "/memories/m-new", get_memory)
+    recorder.route("POST", "/v1/memories", httpx.Response(201, json=memory_json(MEMORY_ID, status="PENDING")))
+    recorder.route("GET", f"/memories/{MEMORY_ID}", get_memory)
     provider = make_provider(client)
     await provider.add(MemoryContent(content="hello", mime_type=MemoryMimeType.TEXT))
 
@@ -260,10 +267,10 @@ async def test_add_waits_for_its_own_memory_never_by_searching(client, recorder)
 async def test_space_reuse_requires_a_matching_embedder(client, recorder):
     """live: v0.1.0 reused a same-named space and reported back the embedder
     that was *asked for*, not the one the space actually uses."""
-    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json("s-existing", "shared", embedder_id="emb-OTHER")]}))
+    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json(OTHER_SPACE_ID, "shared", embedder_id=OTHER_EMBEDDER_ID)]}))
     provider = GoodMemContextProvider(
         config=GoodMemMemoryConfig(base_url="https://goodmem.test", api_key="k",
-                                   space_name="shared", embedder_id="emb-WANTED"),
+                                   space_name="shared", embedder_id=EMBEDDER_ID),
         client=client,
     )
     with pytest.raises(ValueError, match="different embedder"):
@@ -271,20 +278,20 @@ async def test_space_reuse_requires_a_matching_embedder(client, recorder):
 
 
 async def test_space_reuse_succeeds_when_the_embedder_matches(client, recorder):
-    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json("s-existing", "shared", embedder_id="emb-1")]}))
+    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json(OTHER_SPACE_ID, "shared", embedder_id=EMBEDDER_ID)]}))
     provider = GoodMemContextProvider(
         config=GoodMemMemoryConfig(base_url="https://goodmem.test", api_key="k",
-                                   space_name="shared", embedder_id="emb-1"),
+                                   space_name="shared", embedder_id=EMBEDDER_ID),
         client=client,
     )
-    assert await provider._ensure_space() == "s-existing"
+    assert await provider._ensure_space() == OTHER_SPACE_ID
 
 
 async def test_ambiguous_space_name_is_an_error(client, recorder):
-    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json("a", "dup"), space_json("b", "dup")]}))
+    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json(SPACE_ID, "dup"), space_json(OTHER_SPACE_ID, "dup")]}))
     provider = GoodMemContextProvider(
         config=GoodMemMemoryConfig(base_url="https://goodmem.test", api_key="k",
-                                   space_name="dup", embedder_id="emb-1"),
+                                   space_name="dup", embedder_id=EMBEDDER_ID),
         client=client,
     )
     with pytest.raises(ValueError, match="accessible spaces are named"):
@@ -293,10 +300,10 @@ async def test_ambiguous_space_name_is_an_error(client, recorder):
 
 async def test_space_lookup_uses_a_server_side_name_filter(client, recorder):
     """v0.1.0 listed page one and scanned it in Python."""
-    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json("s1", "wanted")]}))
+    recorder.route("GET", "/v1/spaces", httpx.Response(200, json={"spaces": [space_json(SPACE_ID, "wanted")]}))
     provider = GoodMemContextProvider(
         config=GoodMemMemoryConfig(base_url="https://goodmem.test", api_key="k",
-                                   space_name="wanted", embedder_id="emb-1"),
+                                   space_name="wanted", embedder_id=EMBEDDER_ID),
         client=client,
     )
     await provider._ensure_space()
@@ -347,9 +354,9 @@ def test_update_space_tool_has_no_public_read(client):
 
 
 async def test_update_space_sends_only_known_fields(client, recorder):
-    recorder.route("PUT", "/spaces/s1", httpx.Response(200, json=space_json("s1", "n")))
+    recorder.route("PUT", f"/spaces/{SPACE_ID}", httpx.Response(200, json=space_json(SPACE_ID, "n")))
     tools = {t.name: t for t in create_goodmem_admin_tools(client)}
-    await tools["goodmem_update_space"].run_json({"space_id": "s1", "name": "n"}, CancellationToken())
+    await tools["goodmem_update_space"].run_json({"space_id": SPACE_ID, "name": "n"}, CancellationToken())
     assert "publicRead" not in recorder.body()
 
 
@@ -357,18 +364,18 @@ async def test_update_space_sends_only_known_fields(client, recorder):
 def test_search_tool_exposes_only_the_query(client):
     """v0.1.0's retrieve tool took ten arguments, including wait_for_indexing
     and llm_temperature, all model-chosen."""
-    tool = create_goodmem_search_tool(client, space_ids=["s1"])
+    tool = create_goodmem_search_tool(client, space_ids=[SPACE_ID])
     assert list(tool.schema["parameters"]["properties"]) == ["query"]
 
 
 async def test_search_tool_configuration_is_not_model_reachable(client, recorder):
     recorder.route("POST", ":retrieve", ndjson())
     tool = create_goodmem_search_tool(
-        client, space_ids=["configured"], filter="CAST(val('$.a') AS TEXT) = 'b'"
+        client, space_ids=[SPACE_ID], filter="CAST(val('$.a') AS TEXT) = 'b'"
     )
     await tool.run_json({"query": "q"}, CancellationToken())
     body = recorder.body()
-    assert body["spaceKeys"][0]["spaceId"] == "configured"
+    assert body["spaceKeys"][0]["spaceId"] == SPACE_ID
     assert body["spaceKeys"][0]["filter"] == "CAST(val('$.a') AS TEXT) = 'b'"
 
 
@@ -376,9 +383,9 @@ async def test_search_tool_configuration_is_not_model_reachable(client, recorder
 async def test_get_memory_returns_readable_text_in_one_request(client, recorder):
     """live: v0.1.0 made a second call to /content and reported success with
     the content missing when it failed."""
-    recorder.route("GET", "/memories/m1", httpx.Response(200, json=memory_json("m1", content_b64="aGVsbG8gd29ybGQ=")))
+    recorder.route("GET", f"/memories/{MEMORY_ID}", httpx.Response(200, json=memory_json(MEMORY_ID, content_b64="aGVsbG8gd29ybGQ=")))
     tools = {t.name: t for t in create_goodmem_admin_tools(client)}
-    raw = await tools["goodmem_get_memory"].run_json({"memory_id": "m1"}, CancellationToken())
+    raw = await tools["goodmem_get_memory"].run_json({"memory_id": MEMORY_ID}, CancellationToken())
     payload = json.loads(str(raw))
     assert payload["content"] == "hello world"
     assert "original_content" not in payload
@@ -386,9 +393,9 @@ async def test_get_memory_returns_readable_text_in_one_request(client, recorder)
 
 
 async def test_get_memory_describes_binary_rather_than_dumping_base64(client, recorder):
-    recorder.route("GET", "/memories/m2", httpx.Response(200, json=memory_json("m2", content_b64="JVBERi0xLjQK", content_type="application/pdf")))
+    recorder.route("GET", f"/memories/{MEMORY_ID_2}", httpx.Response(200, json=memory_json(MEMORY_ID_2, content_b64="JVBERi0xLjQK", content_type="application/pdf")))
     tools = {t.name: t for t in create_goodmem_admin_tools(client)}
-    payload = json.loads(str(await tools["goodmem_get_memory"].run_json({"memory_id": "m2"}, CancellationToken())))
+    payload = json.loads(str(await tools["goodmem_get_memory"].run_json({"memory_id": MEMORY_ID_2}, CancellationToken())))
     assert "content" not in payload
     assert "application/pdf" in payload["content_omitted"]
 
@@ -426,7 +433,7 @@ async def test_a_threshold_that_may_have_emptied_the_result_warns(client, record
     not pass as a plain miss."""
     recorder.route("POST", ":retrieve", ndjson(memory_event("m1")))
     provider = make_provider(
-        client, post_processor=PostProcessorConfig(reranker_id="jina", relevance_threshold=0.6)
+        client, post_processor=PostProcessorConfig(reranker_id=RERANKER_ID, relevance_threshold=0.6)
     )
     with pytest.warns(UserWarning, match="relevance_threshold=0.6 may have removed"):
         result = await provider.query("q")
