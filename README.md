@@ -20,7 +20,8 @@ event loop.
 pip install autogen-goodmem
 ```
 
-Requires Python 3.10+, `autogen-core` 0.7.5+. Version 0.2 is a break from
+Requires Python 3.10+, `autogen-core` 0.7.5+ and the `goodmem` SDK 0.1.34+
+(installed with it). Version 0.2 is a break from
 0.1 — see [CHANGELOG](CHANGELOG.md) for the mapping.
 
 ## As an AutoGen `Memory`
@@ -83,23 +84,51 @@ system message each turn — the same pattern AutoGen's own `ListMemory` uses.
   than assumed to be 0–1. The threshold is applied by the server; if it
   removes every result the provider warns, since an empty result would
   otherwise read as "no matches".
+- `score_kind` is read from the response, not the configuration. If the
+  reranker fails (`RERANKING_FAILED`, or `NOT_FOUND` for the reranker) the
+  server still returns the vector-search hits; they are kept, labelled
+  `vector`, and marked `partial` with those statuses.
 
 ## As tools
 
+The tools take a `goodmem.AsyncGoodmem` client, which you create and close.
+
 ```python
-from autogen_goodmem import create_goodmem_search_tool, create_goodmem_admin_tools
+from autogen_core import CancellationToken
+from autogen_goodmem import create_goodmem_admin_tools, create_goodmem_search_tool
+from goodmem import AsyncGoodmem
+
+client = AsyncGoodmem(
+    base_url="https://goodmem.example.com",
+    api_key="gm_...",
+    # verify="/path/to/ca.pem",   # a server with a self-signed certificate
+)
 
 search = create_goodmem_search_tool(
     client, space_ids=["<space-uuid>"], limit=5,
     reranker_id="<reranker-uuid>",            # optional
     metadata_filter={"category": "policy"},   # optional, escaped for you
 )
+admin_tools = create_goodmem_admin_tools(client)  # only for agents that need them
+
+# What an agent's tool call does:
+print(await search.run_json({"query": "who approves a large refund?"}, CancellationToken()))
+
+await client.close()
 ```
 
 The model supplies only the query; spaces, reranking and filters are yours, so
-an agent cannot redirect a search or widen it mid-run.
+an agent cannot redirect a search or widen it mid-run. The search tool returns
+JSON: `results` (each with `chunk_text`, `score`, `score_kind`, `metadata` and
+IDs), `total_results`, `partial`, and `statuses` when the server reported any.
 
-`create_goodmem_admin_tools(client)` adds space and memory management. These
+`create_goodmem_admin_tools(client)` adds space and memory management
+(`goodmem_list_embedders`, `goodmem_list_rerankers`, `goodmem_list_spaces`,
+`goodmem_get_space`, `goodmem_create_space`, `goodmem_update_space`,
+`goodmem_delete_space`, `goodmem_create_memory`, `goodmem_list_memories`,
+`goodmem_get_memory`, `goodmem_delete_memory`, and `goodmem_upload_file`
+when `upload_dir` is given). A listing returns at most `max_items` (default
+100) and sets `truncated` when that cap may have cut it short. These
 carry the authority of the configured API key — give them only to agents that
 need them. File upload is only created when you pass `upload_dir`, and paths
 resolving outside that directory are refused before the file is opened.
@@ -137,12 +166,15 @@ uv run ruff check autogen_goodmem tests
 uv run mypy autogen_goodmem
 uv run pytest -m "not integration"   # offline: the real SDK over a mock transport or a local server
 GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... \
-  GOODMEM_RERANKER_ID=... GOODMEM_VERIFY_SSL=false uv run pytest -m integration
+  GOODMEM_VERIFY_SSL=false uv run pytest -m integration
 ```
 
-These are the commands CI runs. `GOODMEM_RERANKER_ID` is optional — the
-reranker tests skip without it; `GOODMEM_VERIFY_SSL=false` is for a local
-server with a self-signed certificate.
+CI runs the first four on Python 3.10–3.13, then `uv build` and an import
+of the wheel in a clean environment. It does not run the live suite, which
+needs a server: `GOODMEM_EMBEDDER_ID` is the embedder its spaces are
+created with, and `GOODMEM_VERIFY_SSL=false` is for a local server with a
+self-signed certificate. The offline suite also executes every Python
+snippet in this README against a local server.
 
 Offline tests use event shapes captured from a live server. There is no
 default API key — live tests skip unless the environment provides one.

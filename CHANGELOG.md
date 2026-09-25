@@ -52,6 +52,13 @@ Tests that used placeholder IDs such as `"space-1"` now use UUIDs.
   response: those hits are kept, labelled `vector`, and marked `partial`
   with the statuses (retrieval status contract, Q4a), and the
   `relevance_threshold` warning no longer considers them.
+- **The README's "As tools" quickstart, which is also the PyPI description,
+  raised `NameError`**: it used `client` without creating one. It now
+  creates a `goodmem.AsyncGoodmem`, shows `verify=` for a self-signed
+  server, runs one search and closes the client. Every Python snippet in the
+  README is executed by the offline suite against a local server. The
+  development section no longer lists a `GOODMEM_RERANKER_ID` variable that
+  no test reads, or says CI runs the live suite.
 
 ## 0.2.0
 
