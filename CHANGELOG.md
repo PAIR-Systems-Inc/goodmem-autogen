@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.1
+
+### Security
+
+- **An ID that is not a UUID is refused before any request is made.** The
+  `goodmem` SDK puts IDs into request paths unescaped (`/v1/memories/{id}`)
+  and httpx resolves `..` before sending, so on 0.2.0
+  `goodmem_delete_memory(memory_id="../spaces/<id>")` was sent as
+  `DELETE /v1/spaces/<id>` — deleting a whole space — and the tool reported
+  `{"deleted": true}`. `?` and `#` cut a path short the same way
+  (`"<id>#x"` given to `goodmem_list_memories` fetched the space instead),
+  and the server normalises `%2e%2e`, so neither end can be relied on.
+  Measured against a local server that records every request line, with 12
+  hostile ID values through each of 33 ID-taking call paths (396 cases):
+  357 reached the server on 0.2.0; now all 396 are refused and the server
+  receives nothing.
+- Every GoodMem ID is a UUID, so the rule is an allow-list: an `8-4-4-4-12`
+  hex UUID is accepted and lowercased, and anything else raises `ValueError`
+  naming the field ("memory_id must be a UUID ..."). It applies to every ID
+  whatever its source: tool arguments, `space_ids` and `reranker_id` given to
+  `create_goodmem_search_tool` or `query()`, `space_id`, `embedder_id`,
+  `reranker_id` and `llm_id` in the config (including one loaded with
+  `load_component`), and IDs the server returns that `clear()` and the
+  indexing wait put into paths. IDs sent only in a request body are checked
+  the same way for consistency.
+- Tool schemas and the config's JSON schema declare ID fields with
+  `format: uuid` and the pattern, so a model is told what an ID looks like;
+  the check at the SDK call is what enforces it.
+
+Tests that used placeholder IDs such as `"space-1"` now use UUIDs.
+
 ## 0.2.0
 
 0.2 is a deliberate API break. The integration uses the official `goodmem`

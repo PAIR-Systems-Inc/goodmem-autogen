@@ -23,6 +23,7 @@ from typing_extensions import Self
 
 from ._config import ChunkingConfig, GoodMemMemoryConfig
 from ._connection import GoodMemConnection, run_cancellable
+from ._ids import require_uuid
 from ._results import abstract_reply, classify, hits_from_events
 from ._uploads import GoodMemUploadError, resolve_upload_path
 from .filters import combine
@@ -47,6 +48,10 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
     Attach it to an agent and ``update_context`` injects retrieved passages
     as a system message on each turn, which is how AutoGen's own ``ListMemory``
     and the bundled ext memories work.
+
+    Every ID is a UUID, checked with ``require_uuid`` before the request that
+    carries it -- including IDs the server hands back, which ``clear()`` and
+    the indexing wait put into request paths.
 
     Retrieval reports what the server said: results carry ``partial`` and
     ``statuses`` in their metadata. A search that produced nothing usable
@@ -78,7 +83,10 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         client: AsyncGoodmem | None = None,
         chunking: ChunkingConfig | None = None,
     ) -> None:
-        if not config.space_id and not config.space_name:
+        # The config validates space_id already; it is checked again because a
+        # pydantic model does not re-validate an attribute assigned later.
+        space_id = require_uuid(config.space_id, "space_id") if config.space_id is not None else None
+        if space_id is None and not config.space_name:
             raise ValueError("Set either space_id or space_name on GoodMemMemoryConfig.")
         self._config = config
         self._chunking = chunking or ChunkingConfig()
@@ -89,7 +97,7 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
             timeout=config.timeout,
             client=client,
         )
-        self._space_id: str | None = config.space_id
+        self._space_id: str | None = space_id
         self._space_lock = asyncio.Lock()
 
     # ------------------------------------------------------------ internals
@@ -126,7 +134,7 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
                         f"({', '.join(sorted(embedders)) or 'none'}). Use that embedder, "
                         "a different name, or set space_id."
                     )
-                self._space_id = existing.space_id
+                self._space_id = require_uuid(existing.space_id, "space_id")
                 logger.info("Reusing GoodMem space %s (%s)", name, self._space_id)
                 return self._space_id
 
@@ -139,7 +147,9 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
                 created = await run_cancellable(
                     client.spaces.create(
                         name=name,
-                        space_embedders=[{"embedderId": self._config.embedder_id}],
+                        space_embedders=[
+                            {"embedderId": require_uuid(self._config.embedder_id, "embedder_id")}
+                        ],
                         default_chunking_config=self._chunking.to_api(),
                     ),
                     cancellation_token,
@@ -148,10 +158,10 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
                 # Someone created it between the lookup and the create.
                 async for space in await client.spaces.list(name_filter=name):
                     if space.name == name:
-                        self._space_id = space.space_id
+                        self._space_id = require_uuid(space.space_id, "space_id")
                         return self._space_id
                 raise
-            self._space_id = created.space_id
+            self._space_id = require_uuid(created.space_id, "space_id")
             logger.info("Created GoodMem space %s (%s)", name, self._space_id)
             return self._space_id
 
@@ -159,8 +169,10 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         """Wait for one specific memory to finish indexing.
 
         Searching repeatedly cannot distinguish "not indexed yet" from
-        "nothing matches", so the wait is always on a known ID.
+        "nothing matches", so the wait is always on a known ID. The ID comes
+        from the server's response and goes into a path, so it is checked.
         """
+        memory_id = require_uuid(memory_id, "memory_id")
         client = self._conn.client()
         deadline = asyncio.get_running_loop().time() + self._config.indexing_timeout
         while True:
@@ -232,7 +244,7 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
 
         created = await run_cancellable(
             client.memories.create(
-                space_id=space_id,
+                space_id=require_uuid(space_id, "space_id"),
                 original_content=text,
                 content_type=content_type,
                 metadata=self._merged_metadata(content.metadata),
@@ -271,7 +283,7 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         space_id = await self._ensure_space(cancellation_token)
         client = self._conn.client()
         kwargs: dict[str, Any] = {
-            "space_id": space_id,
+            "space_id": require_uuid(space_id, "space_id"),
             "content_type": content_type,
             "metadata": self._merged_metadata(merged),
         }
@@ -302,13 +314,21 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         if not text.strip():
             raise ValueError("Query must not be empty.")
 
+        # IDs are checked before _ensure_space, which may itself send requests.
+        pp = self._config.post_processor
+        reranker_id = (
+            require_uuid(pp.reranker_id, "reranker_id") if pp and pp.reranker_id is not None else None
+        )
+        llm_id = require_uuid(pp.llm_id, "llm_id") if pp and pp.llm_id is not None else None
+        requested = kwargs.get("space_ids")
+        extra = [require_uuid(s, "space_ids") for s in requested] if requested else None
+
         space_id = await self._ensure_space(cancellation_token)
-        space_ids: list[str] = kwargs.get("space_ids") or [space_id]
+        space_ids: list[str] = extra or [require_uuid(space_id, "space_id")]
         limit = int(kwargs.get("limit") or self._config.max_results)
         expression = combine(self._config.filter, kwargs.get("filter"))
 
-        pp = self._config.post_processor
-        reranked = bool(pp and pp.reranker_id)
+        reranked = bool(reranker_id)
         if pp and pp.relevance_threshold is not None and not pp.reranker_id:
             raise ValueError(
                 "relevance_threshold needs a reranker_id: a vector score is an "
@@ -326,11 +346,11 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         else:
             call["space_keys"] = [{"spaceId": s, "filter": expression} for s in space_ids]
         if pp:
-            if pp.reranker_id:
-                call["reranker_id"] = pp.reranker_id
+            if reranker_id:
+                call["reranker_id"] = reranker_id
                 call["max_results"] = limit
-            if pp.llm_id:
-                call["llm_id"] = pp.llm_id
+            if llm_id:
+                call["llm_id"] = llm_id
                 if pp.llm_temperature is not None:
                     call["llm_temp"] = pp.llm_temperature
             if pp.relevance_threshold is not None:
@@ -415,7 +435,10 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
             )
         space_id = await self._ensure_space()
         client = self._conn.client()
-        ids = [m.memory_id async for m in await client.memories.list(space_id=space_id)]
+        page = await client.memories.list(space_id=require_uuid(space_id, "space_id"))
+        # Listed IDs go into DELETE paths. All are checked before the first
+        # delete, so a malformed one stops the clear rather than half of it.
+        ids = [require_uuid(m.memory_id, "memory_id") async for m in page]
         for memory_id in ids:
             await client.memories.delete(id=memory_id)
         logger.info("Cleared %d memories from space %s", len(ids), space_id)

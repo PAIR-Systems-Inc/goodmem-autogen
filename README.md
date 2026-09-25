@@ -90,7 +90,7 @@ system message each turn — the same pattern AutoGen's own `ListMemory` uses.
 from autogen_goodmem import create_goodmem_search_tool, create_goodmem_admin_tools
 
 search = create_goodmem_search_tool(
-    client, space_ids=["<space-id>"], limit=5,
+    client, space_ids=["<space-uuid>"], limit=5,
     reranker_id="<reranker-uuid>",            # optional
     metadata_filter={"category": "policy"},   # optional, escaped for you
 )
@@ -103,6 +103,11 @@ an agent cannot redirect a search or widen it mid-run.
 carry the authority of the configured API key — give them only to agents that
 need them. File upload is only created when you pass `upload_dir`, and paths
 resolving outside that directory are refused before the file is opened.
+
+Every ID — a tool argument, `space_ids`, `reranker_id`, or an ID field of the
+config — must be a UUID (it is lowercased); anything else raises `ValueError`
+before a request is made. The SDK puts IDs into request paths unescaped, so
+`"../spaces/<id>"` given as a memory ID would otherwise address a whole space.
 
 ## Cancellation
 
@@ -130,7 +135,7 @@ the server.
 uv venv && uv pip install -e ".[dev]"
 uv run ruff check autogen_goodmem tests
 uv run mypy autogen_goodmem
-uv run pytest -m "not integration"   # offline: the real SDK over a mock transport
+uv run pytest -m "not integration"   # offline: the real SDK over a mock transport or a local server
 GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... \
   GOODMEM_RERANKER_ID=... GOODMEM_VERIFY_SSL=false uv run pytest -m integration
 ```

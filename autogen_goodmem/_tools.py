@@ -12,6 +12,11 @@ Two factories, because the two jobs have very different blast radii:
 AutoGen feeds a tool exception's ``str()`` straight back to the model
 (``StaticWorkbench._format_errors``), so messages here stay free of
 credentials and internal detail.
+
+Every ID argument is a :class:`~autogen_goodmem._ids.GoodMemId`, declared as a
+UUID in the tool schema, and is checked again with ``require_uuid`` at the SDK
+call: the SDK puts IDs into request paths unescaped, so ``"../spaces/<id>"``
+passed as a memory ID would otherwise address a space.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from typing import Any
 
 from autogen_core.tools import FunctionTool
 
+from ._ids import GoodMemId, require_uuid
 from ._results import abstract_reply, classify, hits_from_events
 from ._typing import AsyncGoodmemClient
 from ._uploads import resolve_upload_path
@@ -60,6 +66,11 @@ def create_goodmem_search_tool(
     """A search tool whose only model-supplied argument is the query."""
     if not space_ids:
         raise ValueError("space_ids must not be empty.")
+    # Body fields, not paths, but checked the same way: refused here rather
+    # than found out at the first search.
+    space_ids = [require_uuid(s, "space_ids") for s in space_ids]
+    if reranker_id is not None:
+        reranker_id = require_uuid(reranker_id, "reranker_id")
     expression = combine(filter, from_mapping(metadata_filter) if metadata_filter else None)
     reranked = bool(reranker_id)
 
@@ -143,20 +154,20 @@ def create_goodmem_admin_tools(
             default=str,
         )
 
-    async def goodmem_get_space(space_id: str) -> str:
+    async def goodmem_get_space(space_id: GoodMemId) -> str:
         """Fetch one space by ID, with its embedders and labels."""
-        space = await client.spaces.get(id=space_id)
+        space = await client.spaces.get(id=require_uuid(space_id, "space_id"))
         return json.dumps(space.model_dump(exclude_none=True), default=str)
 
-    async def goodmem_create_space(name: str, embedder_id: str) -> str:
+    async def goodmem_create_space(name: str, embedder_id: GoodMemId) -> str:
         """Create a new space. Fails if a space with that name already exists."""
         space = await client.spaces.create(
-            name=name, space_embedders=[{"embedderId": embedder_id}]
+            name=name, space_embedders=[{"embedderId": require_uuid(embedder_id, "embedder_id")}]
         )
         return json.dumps(space.model_dump(exclude_none=True), default=str)
 
     async def goodmem_update_space(
-        space_id: str,
+        space_id: GoodMemId,
         name: str | None = None,
         merge_labels: dict[str, str] | None = None,
         replace_labels: dict[str, str] | None = None,
@@ -171,16 +182,17 @@ def create_goodmem_admin_tools(
             request["replaceLabels"] = replace_labels
         if not request:
             raise ValueError("Nothing to update: pass name, merge_labels or replace_labels.")
-        space = await client.spaces.update(id=space_id, request=request)
+        space = await client.spaces.update(id=require_uuid(space_id, "space_id"), request=request)
         return json.dumps(space.model_dump(exclude_none=True), default=str)
 
-    async def goodmem_delete_space(space_id: str) -> str:
+    async def goodmem_delete_space(space_id: GoodMemId) -> str:
         """Permanently delete a space and every memory in it."""
-        await client.spaces.delete(id=space_id)
-        return json.dumps({"deleted": True, "space_id": space_id})
+        checked = require_uuid(space_id, "space_id")
+        await client.spaces.delete(id=checked)
+        return json.dumps({"deleted": True, "space_id": checked})
 
     async def goodmem_create_memory(
-        space_id: str,
+        space_id: GoodMemId,
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> str:
@@ -188,28 +200,28 @@ def create_goodmem_admin_tools(
         if not content.strip():
             raise ValueError("content must not be empty")
         memory = await client.memories.create(
-            space_id=space_id,
+            space_id=require_uuid(space_id, "space_id"),
             original_content=content,
             content_type="text/plain",
             metadata=metadata or None,
         )
         return json.dumps(memory.model_dump(exclude_none=True), default=str)
 
-    async def goodmem_list_memories(space_id: str) -> str:
+    async def goodmem_list_memories(space_id: GoodMemId) -> str:
         """List the memories stored in a space."""
-        items = [
-            m.model_dump(exclude_none=True)
-            async for m in await client.memories.list(space_id=space_id, max_items=max_items)
-        ]
+        page = await client.memories.list(
+            space_id=require_uuid(space_id, "space_id"), max_items=max_items
+        )
+        items = [m.model_dump(exclude_none=True) async for m in page]
         return json.dumps(
             {"memories": items, "returned": len(items), "truncated": len(items) >= max_items},
             default=str,
         )
 
-    async def goodmem_get_memory(memory_id: str, include_content: bool = True) -> str:
+    async def goodmem_get_memory(memory_id: GoodMemId, include_content: bool = True) -> str:
         """Fetch a memory by ID, with its metadata and readable content."""
         memory = await client.memories.get(
-            id=memory_id, include_content=include_content or None
+            id=require_uuid(memory_id, "memory_id"), include_content=include_content or None
         )
         payload = memory.model_dump(exclude_none=True)
         # model_dump re-encodes content as base64; the attribute holds bytes.
@@ -231,10 +243,11 @@ def create_goodmem_admin_tools(
                 )
         return json.dumps(payload, default=str)
 
-    async def goodmem_delete_memory(memory_id: str) -> str:
+    async def goodmem_delete_memory(memory_id: GoodMemId) -> str:
         """Permanently delete a memory."""
-        await client.memories.delete(id=memory_id)
-        return json.dumps({"deleted": True, "memory_id": memory_id})
+        checked = require_uuid(memory_id, "memory_id")
+        await client.memories.delete(id=checked)
+        return json.dumps({"deleted": True, "memory_id": checked})
 
     funcs: list[Callable[..., Any]] = [
         goodmem_list_embedders,
@@ -253,7 +266,7 @@ def create_goodmem_admin_tools(
     if upload_dir is not None:
 
         async def goodmem_upload_file(
-            space_id: str,
+            space_id: GoodMemId,
             file_name: str,
             metadata: dict[str, Any] | None = None,
         ) -> str:
@@ -261,13 +274,14 @@ def create_goodmem_admin_tools(
             import base64
             import mimetypes
 
+            checked = require_uuid(space_id, "space_id")
             path = resolve_upload_path(file_name, upload_dir)
             raw = path.read_bytes()
             content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             merged = dict(metadata or {})
             merged.setdefault("title", path.name)
             kwargs: dict[str, Any] = {
-                "space_id": space_id,
+                "space_id": checked,
                 "content_type": content_type,
                 "metadata": merged,
             }
