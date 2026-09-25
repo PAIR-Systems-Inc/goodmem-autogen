@@ -28,7 +28,7 @@ from typing import Any
 from autogen_core.tools import FunctionTool
 
 from ._ids import GoodMemId, require_uuid
-from ._results import abstract_reply, classify, hits_from_events
+from ._results import abstract_reply, classify, hits_from_events, reranker_failed
 from ._typing import AsyncGoodmemClient
 from ._uploads import resolve_upload_path
 from .filters import combine, from_mapping
@@ -72,7 +72,6 @@ def create_goodmem_search_tool(
     if reranker_id is not None:
         reranker_id = require_uuid(reranker_id, "reranker_id")
     expression = combine(filter, from_mapping(metadata_filter) if metadata_filter else None)
-    reranked = bool(reranker_id)
 
     async def goodmem_search(query: str) -> str:
         """Search stored knowledge for passages relevant to a question."""
@@ -89,12 +88,15 @@ def create_goodmem_search_tool(
             call["space_ids"] = list(space_ids)
         else:
             call["space_keys"] = [{"spaceId": s, "filter": expression} for s in space_ids]
-        if reranked:
+        if reranker_id:
             call["reranker_id"] = reranker_id
             call["max_results"] = limit
 
         events = list(await client.memories.retrieve(**call))
         statuses, degraded = classify(events)
+        # Decided by the response: a failed reranker leaves vector-scored
+        # fallback hits, which are kept and labelled "vector" (contract Q4a).
+        reranked = bool(reranker_id) and not reranker_failed(events)
         hits = hits_from_events(events, reranked=reranked)[:limit]
 
         payload: dict[str, Any] = {

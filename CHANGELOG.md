@@ -43,6 +43,15 @@ Tests that used placeholder IDs such as `"space-1"` now use UUIDs.
   report `truncated`. The client Protocol declares `list()` without
   parameters, so mypy refuses the old call. Every admin tool now has an
   offline test through the real SDK.
+- **Hits from a failed reranker were labelled `score_kind: "reranker"`.**
+  The label was decided by configuration (`reranker_id` set). When the
+  reranker fails the server sends `RERANKING_FAILED` (and `NOT_FOUND` for a
+  missing reranker) and still returns the vector-search hits; the search
+  tool and `query()` returned those vector similarities (-0.5689, -0.5608 in
+  a live capture) as reranker scores. `score_kind` is now read from the
+  response: those hits are kept, labelled `vector`, and marked `partial`
+  with the statuses (retrieval status contract, Q4a), and the
+  `relevance_threshold` warning no longer considers them.
 
 ## 0.2.0
 

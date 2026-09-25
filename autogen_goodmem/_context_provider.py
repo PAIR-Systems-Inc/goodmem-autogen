@@ -24,7 +24,7 @@ from typing_extensions import Self
 from ._config import ChunkingConfig, GoodMemMemoryConfig
 from ._connection import GoodMemConnection, run_cancellable
 from ._ids import require_uuid
-from ._results import abstract_reply, classify, hits_from_events
+from ._results import abstract_reply, classify, hits_from_events, reranker_failed
 from ._uploads import GoodMemUploadError, resolve_upload_path
 from .filters import combine
 
@@ -328,7 +328,6 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         limit = int(kwargs.get("limit") or self._config.max_results)
         expression = combine(self._config.filter, kwargs.get("filter"))
 
-        reranked = bool(reranker_id)
         if pp and pp.relevance_threshold is not None and not pp.reranker_id:
             raise ValueError(
                 "relevance_threshold needs a reranker_id: a vector score is an "
@@ -362,6 +361,11 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
         events = list(await run_cancellable(client.memories.retrieve(**call), cancellation_token))
 
         statuses, degraded = classify(events)
+        # Decided by the response, not the configuration: when the reranker
+        # fails the server returns vector-scored fallback hits. They are kept
+        # (contract Q4a), labelled "vector", and the reranker threshold
+        # warning below does not apply to them.
+        reranked = bool(reranker_id) and not reranker_failed(events)
         hits = hits_from_events(events, reranked=reranked)[:limit]
 
         if reranked and pp and pp.relevance_threshold is not None and not hits and not degraded:
