@@ -53,6 +53,29 @@ def classify(events: Sequence[RetrieveMemoryEvent]) -> tuple[list[dict[str, Any]
     return surfaced, degraded
 
 
+def reranker_failed(events: Iterable[RetrieveMemoryEvent]) -> bool:
+    """True when the server says the requested reranker did not run.
+
+    The server then still returns the vector-search hits as a fallback, so
+    whether results are reranker-scored is decided by the response, never by
+    the configuration: labelling fallback hits ``"reranker"`` would put
+    vector similarities on a reranker's scale. Seen on a live server
+    (v1.0.320) for a missing reranker: ``NOT_FOUND`` with
+    ``details.reranker_id``, then ``RERANKING_FAILED``, then the hits.
+    """
+    for event in events:
+        status = event.status
+        if status is None or status.code is None:
+            continue
+        if status.code == "RERANKING_FAILED":
+            return True
+        if status.code == "NOT_FOUND":
+            details = status.details or {}
+            if "reranker_id" in details or "reranker" in (status.message or "").lower():
+                return True
+    return False
+
+
 def hits_from_events(
     events: Iterable[RetrieveMemoryEvent], *, reranked: bool
 ) -> list[dict[str, Any]]:

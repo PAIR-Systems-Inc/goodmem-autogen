@@ -4,12 +4,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, SecretStr
 
+from ._ids import UuidStr
+
 
 class PostProcessorConfig(BaseModel):
     """Optional reranker / LLM post-processing applied to retrieval."""
 
-    reranker_id: str | None = Field(default=None)
-    llm_id: str | None = Field(default=None)
+    reranker_id: UuidStr | None = Field(default=None)
+    llm_id: UuidStr | None = Field(default=None)
     llm_temperature: float | None = Field(default=None, description="0.0-2.0")
     relevance_threshold: float | None = Field(
         default=None,
@@ -31,13 +33,16 @@ class GoodMemMemoryConfig(BaseModel):
     ``api_key`` is a ``SecretStr``. AutoGen serializes a memory's config
     whenever the owning agent is dumped (``AssistantAgent._to_config`` calls
     ``memory.dump_component()``), and a plain ``str`` is written out verbatim.
+
+    ID fields must be UUIDs and are lowercased; anything else fails
+    validation, because the SDK puts IDs into request paths unescaped.
     """
 
     base_url: str = Field(description="GoodMem API base URL, e.g. https://goodmem.example.com")
     api_key: SecretStr = Field(description="GoodMem API key (sent as X-API-Key)")
-    space_id: str | None = Field(
+    space_id: UuidStr | None = Field(
         default=None,
-        description="Space to use. Takes precedence over space_name.",
+        description="Space to use (its UUID). Takes precedence over space_name.",
     )
     space_name: str | None = Field(
         default=None,
@@ -47,9 +52,9 @@ class GoodMemMemoryConfig(BaseModel):
             "name is an error."
         ),
     )
-    embedder_id: str | None = Field(
+    embedder_id: UuidStr | None = Field(
         default=None,
-        description="Embedder for the space. Required when creating by space_name.",
+        description="Embedder for the space (its UUID). Required when creating by space_name.",
     )
     max_results: int = Field(default=5, gt=0)
     fetch_k: int | None = Field(

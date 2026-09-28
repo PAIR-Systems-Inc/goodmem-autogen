@@ -1,6 +1,6 @@
 [project]
 name = "autogen-goodmem"
-version = "0.2.0"
+version = "0.2.1"
 description = "GoodMem memory and tools for the AutoGen agent framework."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -31,7 +31,10 @@ class _MemoriesAPI(Protocol):
 
 
 class _ModelsAPI(Protocol):
-    async def list(self, **kwargs: Any) -> Any: ...
+    # embedders.list() and rerankers.list() take no max_items and return a
+    # plain list in goodmem 0.1.34/0.1.35; declaring no parameters lets mypy
+    # refuse list(max_items=...), which raised TypeError at runtime.
+    async def list(self) -> Sequence[Any]: ...
 
 
 class AsyncGoodmemClient(Protocol):
