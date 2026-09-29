@@ -12,7 +12,7 @@ from ._tools import (
 from ._uploads import GoodMemUploadError
 
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 __all__ = [
     "ADMIN_TOOL_NAMES",

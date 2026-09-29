@@ -3,15 +3,6 @@
 [GoodMem](https://goodmem.ai) memory and tools for the
 [AutoGen](https://github.com/microsoft/autogen) agent framework.
 
-> **Renamed on PyPI.** This package was previously published as
-> `autogen-goodmem` (last version on that name: 0.2.1). It moved into the
-> PAIR Systems PyPI organisation under the `goodmem-<framework>` naming used
-> by goodmem-adk and goodmem-semantic-kernel. The import name is unchanged:
-> `import autogen_goodmem` keeps working. Both distributions ship the same
-> `autogen_goodmem` package and would overwrite each other's files, so remove
-> the old one first:
-> `pip uninstall -y autogen-goodmem && pip install goodmem-autogen`.
-
 Two ways in:
 
 1. **`GoodMemContextProvider`** — an `autogen_core.memory.Memory` backed by a
@@ -37,7 +28,7 @@ Requires Python 3.10+, `autogen-core` 0.7.5+ and the `goodmem` SDK 0.1.34+
 
 ```python
 from autogen_core.memory import MemoryContent, MemoryMimeType
-from autogen_goodmem import GoodMemContextProvider, GoodMemMemoryConfig
+from goodmem_autogen import GoodMemContextProvider, GoodMemMemoryConfig
 
 provider = GoodMemContextProvider(
     config=GoodMemMemoryConfig(
@@ -104,7 +95,7 @@ The tools take a `goodmem.AsyncGoodmem` client, which you create and close.
 
 ```python
 from autogen_core import CancellationToken
-from autogen_goodmem import create_goodmem_admin_tools, create_goodmem_search_tool
+from goodmem_autogen import create_goodmem_admin_tools, create_goodmem_search_tool
 from goodmem import AsyncGoodmem
 
 client = AsyncGoodmem(
@@ -171,8 +162,8 @@ the server.
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
-uv run ruff check autogen_goodmem tests
-uv run mypy autogen_goodmem
+uv run ruff check goodmem_autogen tests
+uv run mypy goodmem_autogen
 uv run pytest -m "not integration"   # offline: the real SDK over a mock transport or a local server
 GOODMEM_BASE_URL=... GOODMEM_API_KEY=... GOODMEM_EMBEDDER_ID=... \
   GOODMEM_VERIFY_SSL=false uv run pytest -m integration

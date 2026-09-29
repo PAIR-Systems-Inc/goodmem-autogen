@@ -1,6 +1,6 @@
 [project]
 name = "goodmem-autogen"
-version = "0.2.2"
+version = "0.3.0"
 description = "GoodMem memory and tools for the AutoGen agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,7 +43,7 @@ Issues = "https://github.com/PAIR-Systems-Inc/goodmem-autogen/issues"
 
 [tool.ruff]
 target-version = "py310"
-src = ["autogen_goodmem", "tests"]
+src = ["goodmem_autogen", "tests"]
 
 [tool.ruff.lint]
 extend-select = ["E", "F", "B", "I", "UP", "RUF", "PYI", "TRY", "PERF"]
@@ -72,4 +72,4 @@ requires = ["flit-core>=3.11,<4.0"]
 build-backend = "flit_core.buildapi"
 
 [tool.flit.module]
-name = "autogen_goodmem"
+name = "goodmem_autogen"

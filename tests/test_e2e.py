@@ -16,7 +16,8 @@ import uuid
 
 from autogen_core import CancellationToken
 from autogen_core.memory import MemoryContent, MemoryMimeType
-from autogen_goodmem import (
+from goodmem import AsyncGoodmem
+from goodmem_autogen import (
     GoodMemContextProvider,
     GoodMemMemoryConfig,
     GoodMemUploadError,
@@ -24,7 +25,6 @@ from autogen_goodmem import (
     create_goodmem_admin_tools,
     create_goodmem_search_tool,
 )
-from goodmem import AsyncGoodmem
 import pytest
 
 
