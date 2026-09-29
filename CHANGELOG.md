@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+### Changed
+
+- Renamed to `goodmem-autogen` (import `goodmem_autogen`), the
+  goodmem-<framework> naming used by goodmem-adk and goodmem-semantic-kernel.
+  **Breaking:** update imports from `autogen_goodmem` to `goodmem_autogen`.
+  The component provider path recorded by `dump_component()` is now
+  `goodmem_autogen.GoodMemContextProvider`.
+
 ## 0.2.1
 
 ### Security

@@ -20,7 +20,7 @@ from typing import Any
 import warnings
 
 from autogen_core import CancellationToken
-from autogen_goodmem import (
+from goodmem_autogen import (
     GoodMemContextProvider,
     GoodMemMemoryConfig,
     PostProcessorConfig,

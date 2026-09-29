@@ -13,7 +13,7 @@ AutoGen feeds a tool exception's ``str()`` straight back to the model
 (``StaticWorkbench._format_errors``), so messages here stay free of
 credentials and internal detail.
 
-Every ID argument is a :class:`~autogen_goodmem._ids.GoodMemId`, declared as a
+Every ID argument is a :class:`~goodmem_autogen._ids.GoodMemId`, declared as a
 UUID in the tool schema, and is checked again with ``require_uuid`` at the SDK
 call: the SDK puts IDs into request paths unescaped, so ``"../spaces/<id>"``
 passed as a memory ID would otherwise address a space.

@@ -74,7 +74,7 @@ class GoodMemContextProvider(Memory, Component[GoodMemMemoryConfig]):
     """
 
     component_config_schema = GoodMemMemoryConfig
-    component_provider_override = "autogen_goodmem.GoodMemContextProvider"
+    component_provider_override = "goodmem_autogen.GoodMemContextProvider"
 
     def __init__(
         self,

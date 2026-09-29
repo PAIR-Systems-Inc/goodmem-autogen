@@ -33,14 +33,14 @@ from urllib.parse import urlsplit
 from autogen_core import CancellationToken
 from autogen_core.memory import MemoryContent, MemoryMimeType
 from autogen_core.tools import FunctionTool, StaticWorkbench
-from autogen_goodmem import (
+from goodmem import AsyncGoodmem
+from goodmem_autogen import (
     GoodMemContextProvider,
     GoodMemMemoryConfig,
     PostProcessorConfig,
     create_goodmem_admin_tools,
     create_goodmem_search_tool,
 )
-from goodmem import AsyncGoodmem
 import pytest
 
 from .conftest import memory_json, space_json
@@ -272,7 +272,7 @@ async def _component_json(ctx: Ctx, value: str) -> Any:
     """A component config as it arrives from a file or a web request."""
     provider = GoodMemContextProvider.load_component(
         {
-            "provider": "autogen_goodmem.GoodMemContextProvider",
+            "provider": "goodmem_autogen.GoodMemContextProvider",
             "component_type": "memory",
             "config": {
                 "base_url": ctx.server.url,
@@ -530,7 +530,7 @@ def test_config_id_fields_are_declared_as_uuids() -> None:
 
 
 def test_require_uuid_is_an_allow_list() -> None:
-    from autogen_goodmem._ids import UUID_PATTERN as package_pattern, require_uuid
+    from goodmem_autogen._ids import UUID_PATTERN as package_pattern, require_uuid
 
     assert package_pattern == UUID_PATTERN
     assert require_uuid(OK.upper(), "space_id") == OK

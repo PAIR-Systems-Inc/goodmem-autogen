@@ -24,7 +24,7 @@ from typing import Any
 
 from autogen_core import CancellationToken
 from autogen_core.tools import StaticWorkbench
-from autogen_goodmem import ADMIN_TOOL_NAMES, create_goodmem_admin_tools
+from goodmem_autogen import ADMIN_TOOL_NAMES, create_goodmem_admin_tools
 import httpx
 import pytest
 

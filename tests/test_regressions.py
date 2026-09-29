@@ -14,7 +14,7 @@ from autogen_core import CancellationToken
 from autogen_core.memory import MemoryContent, MemoryMimeType
 from autogen_core.model_context import UnboundedChatCompletionContext
 from autogen_core.models import UserMessage
-from autogen_goodmem import (
+from goodmem_autogen import (
     GoodMemContextProvider,
     GoodMemMemoryConfig,
     GoodMemUploadError,
