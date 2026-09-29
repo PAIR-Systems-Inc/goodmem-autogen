@@ -55,5 +55,5 @@ jobs:
       - name: Verify the wheel imports in a clean env
         run: |
           uv venv .venv-smoke --python ${{ matrix.python-version }}
-          uv pip install --python .venv-smoke/bin/python dist/autogen_goodmem-*.whl
-          .venv-smoke/bin/python -c "from autogen_goodmem import GoodMemContextProvider, create_goodmem_search_tool, __version__; print(f'autogen-goodmem {__version__} OK')"
+          uv pip install --python .venv-smoke/bin/python dist/goodmem_autogen-*.whl
+          .venv-smoke/bin/python -c "from autogen_goodmem import GoodMemContextProvider, create_goodmem_search_tool, __version__; print(f'goodmem-autogen {__version__} OK')"

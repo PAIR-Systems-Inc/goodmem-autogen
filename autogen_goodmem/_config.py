@@ -1,4 +1,4 @@
-"""Configuration for the autogen-goodmem integration."""
+"""Configuration for the goodmem-autogen integration."""
 
 from typing import Literal
 

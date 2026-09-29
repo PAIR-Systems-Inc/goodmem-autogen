@@ -1,6 +1,6 @@
 [project]
-name = "autogen-goodmem"
-version = "0.2.1"
+name = "goodmem-autogen"
+version = "0.2.2"
 description = "GoodMem memory and tools for the AutoGen agent framework."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,9 +37,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
-Repository = "https://github.com/PAIR-Systems-Inc/autogen-goodmem"
-Issues = "https://github.com/PAIR-Systems-Inc/autogen-goodmem/issues"
+Homepage = "https://github.com/PAIR-Systems-Inc/goodmem-autogen"
+Repository = "https://github.com/PAIR-Systems-Inc/goodmem-autogen"
+Issues = "https://github.com/PAIR-Systems-Inc/goodmem-autogen/issues"
 
 [tool.ruff]
 target-version = "py310"

@@ -1,4 +1,4 @@
-"""autogen-goodmem: GoodMem memory and tools for the AutoGen agent framework."""
+"""goodmem-autogen: GoodMem memory and tools for the AutoGen agent framework."""
 
 from ._config import ChunkingConfig, GoodMemMemoryConfig, PostProcessorConfig
 from ._connection import GoodMemConnection
@@ -12,7 +12,7 @@ from ._tools import (
 from ._uploads import GoodMemUploadError
 
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "ADMIN_TOOL_NAMES",

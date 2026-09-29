@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2
+
+### Changed
+
+- **The distribution is renamed from `autogen-goodmem` to `goodmem-autogen`.**
+  It moved into the PAIR Systems PyPI organisation under the
+  `goodmem-<framework>` naming used by goodmem-adk and
+  goodmem-semantic-kernel. The import package is unchanged: `import
+  autogen_goodmem` and every name in it work as before. `autogen-goodmem`
+  stays at 0.2.1. Both distributions ship the same `autogen_goodmem`
+  package, so uninstall the old one before installing the new one:
+  `pip uninstall -y autogen-goodmem && pip install goodmem-autogen`.
+- No code changes.
+
 ## 0.2.1
 
 ### Security

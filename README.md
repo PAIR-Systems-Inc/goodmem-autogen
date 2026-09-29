@@ -1,7 +1,16 @@
-# autogen-goodmem
+# goodmem-autogen
 
 [GoodMem](https://goodmem.ai) memory and tools for the
 [AutoGen](https://github.com/microsoft/autogen) agent framework.
+
+> **Renamed on PyPI.** This package was previously published as
+> `autogen-goodmem` (last version on that name: 0.2.1). It moved into the
+> PAIR Systems PyPI organisation under the `goodmem-<framework>` naming used
+> by goodmem-adk and goodmem-semantic-kernel. The import name is unchanged:
+> `import autogen_goodmem` keeps working. Both distributions ship the same
+> `autogen_goodmem` package and would overwrite each other's files, so remove
+> the old one first:
+> `pip uninstall -y autogen-goodmem && pip install goodmem-autogen`.
 
 Two ways in:
 
@@ -17,7 +26,7 @@ event loop.
 ## Install
 
 ```bash
-pip install autogen-goodmem
+pip install goodmem-autogen
 ```
 
 Requires Python 3.10+, `autogen-core` 0.7.5+ and the `goodmem` SDK 0.1.34+
